@@ -111,7 +111,7 @@ HEALTHCARE_ROLES = {
     },
     'leadership': {
         'keywords': ['ceo', 'coo', 'director', 'manager', 'supervisor', 'administrator', 'chief',
-                    'vice president', 'president', 'executive'],
+                    'vice president', 'president', 'executive', 'chief'],
         'category': 'Management',
         'seniority': 'Leadership'
     },

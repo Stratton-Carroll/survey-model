@@ -89,7 +89,7 @@ def extract_key_phrases(text, max_tags=4):
                 # Shortage keywords
                 'shortage', 'understaffed', 'short staffed', 'staffing shortage', 
                 'gaping hole', 'lack of', 'not enough', 'scarce', 'vacant',
-                'hard to hire', 'difficult to hire', 'can\'t hire', 'unable to hire', 'my own billing', 'we need', 'we also need', 'need a', 'need more', 'gaps', 'are needed',
+                'hard to hire', 'difficult to hire', 'can\'t hire', 'unable to hire', 'my own billing', 'we need', 'we also need', 'need a', 'need more', 'gaps', 'are needed', 'need these professionals',
                 # Recruitment keywords
                 'recruitment', 'recruiting', 'hire', 'hiring', 'attract'
             ],
@@ -99,7 +99,7 @@ def extract_key_phrases(text, max_tags=4):
                 'contract staff', 'temp workers', 'agency staff', 'retention',
                 'empty positions', 'open positions', 'need more', 'need staff',
                 'more people', 'more workers', 'fill positions', 'desperately need',
-                'critical need', 'bottleneck', 'could double enrollment', 'my own billing', 'we need', 'we also need', 'need a', 'need more', 'gaps', 'are needed',
+                'critical need', 'bottleneck', 'could double enrollment', 'my own billing', 'we need', 'we also need', 'need a', 'need more', 'gaps', 'are needed', 'need these professionals',
                 # Recruitment keywords
                 'pipeline', 'talent acquisition', 'market', 'marketing', 'compete', 'competitive'
             ],
