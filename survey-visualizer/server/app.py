@@ -40,6 +40,30 @@ def get_tags():
         print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/questions/<int:question_id>/tag-distribution', methods=['GET'])
+def get_question_tag_distribution(question_id):
+    try:
+        conn = get_db_connection()
+        query = """
+        SELECT 
+            dt.TagID,
+            dt.TagName,
+            dt.TagCategory,
+            COUNT(DISTINCT brt.ResponseID) as TagCount
+        FROM FactSurveyResponses fsr
+        JOIN BridgeResponseTags brt ON fsr.ResponseID = brt.ResponseID
+        JOIN DimTags dt ON brt.TagID = dt.TagID
+        WHERE fsr.QuestionID = ?
+        GROUP BY dt.TagID, dt.TagName, dt.TagCategory
+        ORDER BY TagCount DESC
+        """
+        tag_distribution = conn.execute(query, (question_id,)).fetchall()
+        conn.close()
+        return jsonify([dict(item) for item in tag_distribution])
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/tags/<int:tag_id>/responses', methods=['GET'])
 def get_tag_responses(tag_id):
     try:

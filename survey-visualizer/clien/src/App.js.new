@@ -100,17 +100,10 @@ function App() {
     setExpandedQuestions(newExpandedQuestions);
   };
 
-  const Logo = () => (
-    <div className="logo-container">
-      <img src="/hwhi-logo.png" alt="Heartland Whole Health Institute Logo" />
-    </div>
-  );
-
   // Tag detail view
   if (currentView === 'tag-detail' && selectedTag) {
     return (
       <div className="App">
-        <Logo />
         <header className="App-header">
           <div className="nav-buttons">
             <button onClick={handleBackClick} className="back-button">← Back to Tags</button>
@@ -134,26 +127,14 @@ function App() {
                     <div className="response-header">
                       <div className="response-meta">
                         <span className="role">{response.RoleName}</span>
-                        <span className="location">{response.PrimaryCounty}</span>
-                        {response.OrganizationName && (
-                          <span className="org-type">{response.OrganizationName}</span>
+                        <span className="location">{response.PrimaryCounty}, {response.State}</span>
+                        {response.OrganizationType && (
+                          <span className="org-type">{response.OrganizationType}</span>
                         )}
                       </div>
                     </div>
                     <div className="response-content">
                       <p className="response-text">{response.ResponseText}</p>
-                      <div className="response-tags">
-                        <div className="tags-list">
-                          {response.Tags && response.Tags.map((tag, tagIndex) => (
-                            <span 
-                              key={tagIndex} 
-                              className={`tag-badge ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
-                            >
-                              {tag.TagName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -201,56 +182,49 @@ function App() {
                             data={{
                               labels: tagDistributions[question.QuestionID].map(tag => tag.TagName),
                               datasets: [{
-                                label: 'Responses',
+                                label: 'Tag Distribution',
                                 data: tagDistributions[question.QuestionID].map(tag => tag.TagCount),
-                                backgroundColor: '#7a9944',
-                                borderColor: '#3d003d',
-                                borderWidth: 2,
-                                borderRadius: 6,
-                                barThickness: 'flex',
-                                maxBarThickness: 50
+                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                                borderColor: 'rgba(75, 192, 192, 1)',
+                                borderWidth: 1
                               }]
                             }}
                             options={{
                               responsive: true,
                               maintainAspectRatio: false,
-                              layout: {
-                                padding: {
-                                  top: 10,
-                                  bottom: 25,
-                                  left: 10,
-                                  right: 10
-                                }
-                              },
                               plugins: {
                                 legend: {
-                                  display: false
+                                  position: 'top',
+                                  labels: {
+                                    color: '#1e293b',
+                                    font: {
+                                      size: 12,
+                                      weight: '500'
+                                    },
+                                    padding: 20
+                                  }
                                 },
                                 title: {
-                                  display: false
-                                },
-                                tooltip: {
-                                  callbacks: {
-                                    title: (tooltipItems) => {
-                                      const index = tooltipItems[0].dataIndex;
-                                      return tagDistributions[question.QuestionID][index].TagName;
-                                    }
-                                  }
+                                  display: true,
+                                  text: 'Tag Distribution',
+                                  color: '#1e293b',
+                                  font: {
+                                    size: 16,
+                                    weight: '600'
+                                  },
+                                  padding: 20
                                 }
                               },
                               scales: {
                                 x: {
                                   ticks: {
-                                    color: 'rgba(255, 255, 255, 0.95)',
+                                    color: '#1e293b',
                                     font: {
-                                      size: 11,
-                                      weight: '500'
+                                      size: 12
                                     },
                                     maxRotation: 45,
                                     minRotation: 45,
-                                    padding: 15,
-                                    autoSkip: false,
-                                    textOverflow: 'show'
+                                    padding: 8
                                   },
                                   grid: {
                                     display: false
@@ -258,35 +232,29 @@ function App() {
                                 },
                                 y: {
                                   beginAtZero: true,
-                                  suggestedMax: Math.max(...tagDistributions[question.QuestionID].map(tag => tag.TagCount)) * 1.1,
-                                  ticks: {
-                                    color: 'rgba(255, 255, 255, 0.95)',
+                                  title: {
+                                    display: true,
+                                    text: 'Number of Responses',
+                                    color: '#1e293b',
                                     font: {
                                       size: 12,
                                       weight: '500'
+                                    }
+                                  },
+                                  ticks: {
+                                    color: '#1e293b',
+                                    font: {
+                                      size: 12
                                     },
-                                    padding: 8,
-                                    stepSize: 1
+                                    padding: 8
                                   },
                                   grid: {
-                                    display: true,
-                                    color: 'rgba(0, 0, 0, 0.08)',
-                                    drawBorder: false,
-                                    lineWidth: 1
-                                  },
-                                  border: {
-                                    display: false
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                   }
                                 }
-                              },
-                              animation: {
-                                duration: 750,
-                                easing: 'easeOutQuart'
-                              },
-                              barThickness: 'flex',
-                              maxBarThickness: 50
+                              }
                             }}
-                            style={{ height: '400px', marginBottom: '20px' }}
+                            style={{ height: '300px', marginBottom: '20px' }}
                           />
                         </div>
                       )}
@@ -295,26 +263,14 @@ function App() {
                           <div className="response-header">
                             <div className="response-meta">
                               <span className="role">{response.RoleName}</span>
-                              <span className="location">{response.PrimaryCounty}</span>
-                              {response.OrganizationName && (
-                                <span className="org-type">{response.OrganizationName}</span>
+                              <span className="location">{response.PrimaryCounty}, {response.State}</span>
+                              {response.OrganizationType && (
+                                <span className="org-type">{response.OrganizationType}</span>
                               )}
                             </div>
                           </div>
                           <div className="response-content">
                             <p className="response-text">{response.ResponseText}</p>
-                            <div className="response-tags">
-                              <div className="tags-list">
-                                {response.Tags && response.Tags.map((tag, tagIndex) => (
-                                  <span 
-                                    key={tagIndex} 
-                                    className={`tag-badge ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
-                                  >
-                                    {tag.TagName}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
                           </div>
                         </div>
                       ))}
@@ -332,7 +288,6 @@ function App() {
   // Main tags view
   return (
     <div className="App">
-      <Logo />
       <header className="App-header">
         <div className="nav-buttons">
           <button onClick={handleViewResponses} className="nav-button">View All Responses</button>
