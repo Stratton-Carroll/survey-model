@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
 import os
@@ -22,12 +22,35 @@ def get_tags():
         print(f"Database file exists: {os.path.exists(DATABASE_PATH)}")
         conn = get_db_connection()
         
-        # Get tags with response counts
+        # Get tags with effective response counts (including manual overrides)
         query = """
+        WITH EffectiveResponseTags AS (
+            -- Original tags
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            
+            UNION
+            
+            -- Manual additions
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'REMOVE'
+        )
         SELECT t.TagID, t.TagKey, t.TagName, t.TagCategory, t.TagPriority, 
-               t.TagDescription, t.IsActive, COUNT(bt.ResponseID) as ResponseCount 
+               t.TagDescription, t.IsActive, COUNT(ert.ResponseID) as ResponseCount 
         FROM DimTags t 
-        LEFT JOIN BridgeResponseTags bt ON t.TagID = bt.TagID 
+        LEFT JOIN EffectiveResponseTags ert ON t.TagID = ert.TagID 
         WHERE t.IsActive = 1
         GROUP BY t.TagID, t.TagKey, t.TagName, t.TagCategory, t.TagPriority, t.TagDescription, t.IsActive
         ORDER BY ResponseCount DESC
@@ -45,19 +68,43 @@ def get_question_tag_distribution(question_id):
     try:
         conn = get_db_connection()
         query = """
+        WITH EffectiveResponseTags AS (
+            -- Original tags for this question
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            JOIN FactSurveyResponses f ON bt.ResponseID = f.ResponseID
+            WHERE f.QuestionID = ?
+            
+            UNION
+            
+            -- Manual additions for this question
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE f.QuestionID = ? AND mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals for this question
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE f.QuestionID = ? AND mto.Action = 'REMOVE'
+        )
         SELECT 
             dt.TagID,
             dt.TagName,
             dt.TagCategory,
-            COUNT(DISTINCT brt.ResponseID) as TagCount
-        FROM FactSurveyResponses fsr
-        JOIN BridgeResponseTags brt ON fsr.ResponseID = brt.ResponseID
-        JOIN DimTags dt ON brt.TagID = dt.TagID
-        WHERE fsr.QuestionID = ?
+            COUNT(DISTINCT ert.ResponseID) as TagCount
+        FROM EffectiveResponseTags ert
+        JOIN DimTags dt ON ert.TagID = dt.TagID
+        WHERE dt.IsActive = 1
         GROUP BY dt.TagID, dt.TagName, dt.TagCategory
         ORDER BY TagCount DESC
         """
-        tag_distribution = conn.execute(query, (question_id,)).fetchall()
+        tag_distribution = conn.execute(query, (question_id, question_id, question_id)).fetchall()
         conn.close()
         return jsonify([dict(item) for item in tag_distribution])
     except Exception as e:
@@ -85,18 +132,42 @@ def get_tag_responses(tag_id):
         
         responses = conn.execute(query, (tag_id,)).fetchall()
         
-        # For each response, get all its tags
+        # For each response, get all effective tags (original + overrides)
         response_list = []
         for response in responses:
-            # Get all tags for this response
-            tags_query = """
-            SELECT t.TagID, t.TagName, t.TagCategory
-            FROM BridgeResponseTags bt
-            JOIN DimTags t ON bt.TagID = t.TagID
-            WHERE bt.ResponseID = ? AND t.IsActive = 1
+            # Get effective tags using the same logic as the dedicated endpoint
+            effective_tags_query = """
+            WITH EffectiveTags AS (
+                -- Original tags
+                SELECT bt.TagID
+                FROM BridgeResponseTags bt
+                WHERE bt.ResponseID = ?
+                
+                UNION
+                
+                -- Manual additions
+                SELECT mto.TagID
+                FROM ManualTagOverrides mto
+                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                    AND mto.QuestionID = f.QuestionID
+                WHERE f.ResponseID = ? AND mto.Action = 'ADD'
+                
+                EXCEPT
+                
+                -- Manual removals
+                SELECT mto.TagID
+                FROM ManualTagOverrides mto
+                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                    AND mto.QuestionID = f.QuestionID
+                WHERE f.ResponseID = ? AND mto.Action = 'REMOVE'
+            )
+            SELECT DISTINCT et.TagID, t.TagName, t.TagCategory
+            FROM EffectiveTags et
+            JOIN DimTags t ON et.TagID = t.TagID
+            WHERE t.IsActive = 1
             ORDER BY t.TagName
             """
-            tags = conn.execute(tags_query, (response['ResponseID'],)).fetchall()
+            tags = conn.execute(effective_tags_query, (response['ResponseID'], response['ResponseID'], response['ResponseID'])).fetchall()
             
             response_dict = dict(response)
             response_dict['Tags'] = [dict(tag) for tag in tags]
@@ -113,7 +184,7 @@ def get_responses_with_tags():
     try:
         conn = get_db_connection()
         
-        # Get all responses with their associated tags
+        # Get all responses with their effective tags (including manual overrides)
         query = """
         SELECT 
             f.ResponseID,
@@ -126,26 +197,19 @@ def get_responses_with_tags():
             o.OrganizationType,
             g.PrimaryCounty,
             g.State,
-            r.RoleStandardized as RoleName,
-            GROUP_CONCAT(t.TagName, '|') as TagNames,
-            GROUP_CONCAT(t.TagCategory, '|') as TagCategories,
-            GROUP_CONCAT(t.TagID, '|') as TagIDs
+            r.RoleStandardized as RoleName
         FROM FactSurveyResponses f
         JOIN DimQuestion q ON f.QuestionID = q.QuestionID
         LEFT JOIN DimOrganization o ON f.OrganizationID = o.OrganizationID
         LEFT JOIN DimGeography g ON f.GeographyID = g.GeographyID
         LEFT JOIN DimRole r ON f.RoleID = r.RoleID
-        LEFT JOIN BridgeResponseTags bt ON f.ResponseID = bt.ResponseID
-        LEFT JOIN DimTags t ON bt.TagID = t.TagID AND t.IsActive = 1
         WHERE f.HasResponse = 1 AND f.ResponseText IS NOT NULL AND f.ResponseText != ''
-        GROUP BY f.ResponseID, f.SurveyResponseNumber, f.ResponseText, q.QuestionID, q.QuestionText, q.QuestionShort, o.OrganizationName, o.OrganizationType, g.PrimaryCounty, g.State, r.RoleStandardized
         ORDER BY q.QuestionID, f.SurveyResponseNumber
         """
         
         responses = conn.execute(query).fetchall()
-        conn.close()
         
-        # Process the results to create a nested structure
+        # Process the results to create a nested structure with effective tags
         result = {}
         for response in responses:
             question_id = response['QuestionID']
@@ -157,20 +221,40 @@ def get_responses_with_tags():
                     'responses': []
                 }
             
-            # Parse tags
-            tags = []
-            if response['TagNames']:
-                tag_names = response['TagNames'].split('|')
-                tag_categories = response['TagCategories'].split('|') if response['TagCategories'] else []
-                tag_ids = response['TagIDs'].split('|') if response['TagIDs'] else []
+            # Get effective tags for this response using the same logic as the dedicated endpoint
+            effective_tags_query = """
+            WITH EffectiveTags AS (
+                -- Original tags
+                SELECT bt.TagID
+                FROM BridgeResponseTags bt
+                WHERE bt.ResponseID = ?
                 
-                for i, name in enumerate(tag_names):
-                    if name:  # Skip empty names
-                        tags.append({
-                            'TagID': tag_ids[i] if i < len(tag_ids) else None,
-                            'TagName': name,
-                            'TagCategory': tag_categories[i] if i < len(tag_categories) else None
-                        })
+                UNION
+                
+                -- Manual additions
+                SELECT mto.TagID
+                FROM ManualTagOverrides mto
+                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                    AND mto.QuestionID = f.QuestionID
+                WHERE f.ResponseID = ? AND mto.Action = 'ADD'
+                
+                EXCEPT
+                
+                -- Manual removals
+                SELECT mto.TagID
+                FROM ManualTagOverrides mto
+                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                    AND mto.QuestionID = f.QuestionID
+                WHERE f.ResponseID = ? AND mto.Action = 'REMOVE'
+            )
+            SELECT DISTINCT et.TagID, t.TagName, t.TagCategory
+            FROM EffectiveTags et
+            JOIN DimTags t ON et.TagID = t.TagID
+            WHERE t.IsActive = 1
+            ORDER BY t.TagName
+            """
+            tags_result = conn.execute(effective_tags_query, (response['ResponseID'], response['ResponseID'], response['ResponseID'])).fetchall()
+            tags = [dict(tag) for tag in tags_result]
             
             result[question_id]['responses'].append({
                 'ResponseID': response['ResponseID'],
@@ -184,6 +268,7 @@ def get_responses_with_tags():
                 'Tags': tags
             })
         
+        conn.close()
         return jsonify(list(result.values()))
     except Exception as e:
         print(f"Error: {e}")
@@ -266,11 +351,34 @@ def get_analytics():
         response_quality = conn.execute(response_quality_query).fetchone()
         analytics_data['response_quality'] = dict(response_quality)
         
-        # Priority areas (top tags by response count)
+        # Priority areas (top tags by effective response count)
         priority_areas_query = """
-        SELECT t.TagID, t.TagName, t.TagDescription, t.TagCategory, COUNT(bt.ResponseID) as ResponseCount
+        WITH EffectiveResponseTags AS (
+            -- Original tags
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            
+            UNION
+            
+            -- Manual additions
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'REMOVE'
+        )
+        SELECT t.TagID, t.TagName, t.TagDescription, t.TagCategory, COUNT(ert.ResponseID) as ResponseCount
         FROM DimTags t
-        LEFT JOIN BridgeResponseTags bt ON t.TagID = bt.TagID
+        LEFT JOIN EffectiveResponseTags ert ON t.TagID = ert.TagID
         WHERE t.IsActive = 1
         GROUP BY t.TagID, t.TagName, t.TagDescription, t.TagCategory
         ORDER BY ResponseCount DESC
@@ -279,16 +387,39 @@ def get_analytics():
         priority_areas = conn.execute(priority_areas_query).fetchall()
         analytics_data['priority_areas'] = [dict(row) for row in priority_areas]
         
-        # Filtered tag analysis by role category
+        # Filtered tag analysis by role category using effective tags
         filtered_tag_query = """
+        WITH EffectiveResponseTags AS (
+            -- Original tags
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            
+            UNION
+            
+            -- Manual additions
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'REMOVE'
+        )
         SELECT 
             r.RoleCategory,
             t.TagName,
-            COUNT(bt.ResponseID) as ResponseCount
+            COUNT(ert.ResponseID) as ResponseCount
         FROM FactSurveyResponses f
         JOIN DimRole r ON f.RoleID = r.RoleID
-        JOIN BridgeResponseTags bt ON f.ResponseID = bt.ResponseID
-        JOIN DimTags t ON bt.TagID = t.TagID
+        JOIN EffectiveResponseTags ert ON f.ResponseID = ert.ResponseID
+        JOIN DimTags t ON ert.TagID = t.TagID
         WHERE t.IsActive = 1
         GROUP BY r.RoleCategory, t.TagName
         ORDER BY r.RoleCategory, ResponseCount DESC
@@ -308,16 +439,39 @@ def get_analytics():
         
         analytics_data['filtered_tag_analysis'] = filtered_tag_analysis
         
-        # Tag-Role distribution analysis (reverse of filtered_tag_analysis)
+        # Tag-Role distribution analysis using effective tags (reverse of filtered_tag_analysis)
         tag_role_query = """
+        WITH EffectiveResponseTags AS (
+            -- Original tags
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            
+            UNION
+            
+            -- Manual additions
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'REMOVE'
+        )
         SELECT 
             t.TagName,
             r.RoleCategory,
-            COUNT(bt.ResponseID) as ResponseCount
+            COUNT(ert.ResponseID) as ResponseCount
         FROM FactSurveyResponses f
         JOIN DimRole r ON f.RoleID = r.RoleID
-        JOIN BridgeResponseTags bt ON f.ResponseID = bt.ResponseID
-        JOIN DimTags t ON bt.TagID = t.TagID
+        JOIN EffectiveResponseTags ert ON f.ResponseID = ert.ResponseID
+        JOIN DimTags t ON ert.TagID = t.TagID
         WHERE t.IsActive = 1
         GROUP BY t.TagName, r.RoleCategory
         ORDER BY t.TagName, ResponseCount DESC
@@ -343,5 +497,392 @@ def get_analytics():
         print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/response/<int:response_id>/tags', methods=['GET'])
+def get_effective_tags(response_id):
+    """Get effective tags for a response (original + manual overrides)"""
+    try:
+        conn = get_db_connection()
+        
+        # Get response details for stable identifiers
+        response_query = """
+        SELECT SurveyResponseNumber, QuestionID 
+        FROM FactSurveyResponses 
+        WHERE ResponseID = ?
+        """
+        response_info = conn.execute(response_query, (response_id,)).fetchone()
+        
+        if not response_info:
+            conn.close()
+            return jsonify({"error": "Response not found"}), 404
+            
+        # Get effective tags with override logic
+        effective_tags_query = """
+        WITH EffectiveTags AS (
+            -- Start with original tags
+            SELECT bt.TagID
+            FROM BridgeResponseTags bt
+            WHERE bt.ResponseID = ?
+            
+            UNION
+            
+            -- Add manual additions
+            SELECT mto.TagID
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ? 
+            AND mto.Action = 'ADD'
+        ),
+        RemovedTags AS (
+            -- Get manually removed tags
+            SELECT mto.TagID
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ? 
+            AND mto.Action = 'REMOVE'
+        ),
+        FinalTags AS (
+            -- Final effective tags (all tags minus removed ones)
+            SELECT TagID FROM EffectiveTags
+            WHERE TagID NOT IN (SELECT TagID FROM RemovedTags)
+        )
+        SELECT DISTINCT 
+            ft.TagID,
+            dt.TagName,
+            dt.TagCategory,
+            dt.TagDescription,
+            CASE 
+                WHEN mto_add.TagID IS NOT NULL THEN 'MANUAL_ADD'
+                ELSE 'ORIGINAL'
+            END as Source,
+            CASE WHEN mto_add.TagID IS NOT NULL THEN 1 ELSE 0 END as IsManuallyAdded,
+            0 as IsManuallyRemoved
+        FROM FinalTags ft
+        JOIN DimTags dt ON ft.TagID = dt.TagID
+        LEFT JOIN ManualTagOverrides mto_add ON mto_add.TagID = ft.TagID 
+            AND mto_add.SurveyResponseNumber = ? 
+            AND mto_add.QuestionID = ? 
+            AND mto_add.Action = 'ADD'
+        WHERE dt.IsActive = 1
+        ORDER BY dt.TagName
+        """
+        
+        tags = conn.execute(effective_tags_query, (
+            response_id,
+            response_info['SurveyResponseNumber'], response_info['QuestionID'],
+            response_info['SurveyResponseNumber'], response_info['QuestionID'],
+            response_info['SurveyResponseNumber'], response_info['QuestionID']
+        )).fetchall()
+        
+        conn.close()
+        return jsonify([dict(tag) for tag in tags])
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/response/<int:response_id>/tags', methods=['POST'])
+def modify_response_tags(response_id):
+    """Add or remove tags from a response"""
+    try:
+        data = request.get_json()
+        tag_id = data.get('tag_id')
+        action = data.get('action')  # 'ADD' or 'REMOVE'
+        applied_by = data.get('applied_by', 'System')
+        notes = data.get('notes', '')
+        
+        if not all([tag_id, action]) or action not in ['ADD', 'REMOVE']:
+            return jsonify({"error": "Invalid request. Need tag_id and action (ADD/REMOVE)"}), 400
+            
+        conn = get_db_connection()
+        
+        # Get response details for stable identifiers
+        response_query = """
+        SELECT SurveyResponseNumber, QuestionID 
+        FROM FactSurveyResponses 
+        WHERE ResponseID = ?
+        """
+        response_info = conn.execute(response_query, (response_id,)).fetchone()
+        
+        if not response_info:
+            conn.close()
+            return jsonify({"error": "Response not found"}), 404
+            
+        # Insert the override (will replace if same key exists due to PRIMARY KEY)
+        from datetime import datetime
+        override_query = """
+        INSERT OR REPLACE INTO ManualTagOverrides 
+        (SurveyResponseNumber, QuestionID, TagID, Action, AppliedBy, AppliedDate, Notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        conn.execute(override_query, (
+            response_info['SurveyResponseNumber'],
+            response_info['QuestionID'],
+            tag_id,
+            action,
+            applied_by,
+            datetime.now().isoformat(),
+            notes
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True, "message": f"Tag {action.lower()}ed successfully"})
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/tags/available', methods=['GET'])
+def get_available_tags():
+    """Get all available tags for the tag editor"""
+    try:
+        conn = get_db_connection()
+        
+        query = """
+        SELECT TagID, TagName, TagCategory, TagDescription
+        FROM DimTags 
+        WHERE IsActive = 1
+        ORDER BY TagCategory, TagName
+        """
+        
+        tags = conn.execute(query).fetchall()
+        conn.close()
+        
+        return jsonify([dict(tag) for tag in tags])
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/overrides/stats', methods=['GET'])
+def get_override_stats():
+    """Get statistics about manual tag overrides"""
+    try:
+        conn = get_db_connection()
+        
+        stats_query = """
+        SELECT 
+            COUNT(*) as total_overrides,
+            COUNT(CASE WHEN Action = 'ADD' THEN 1 END) as additions,
+            COUNT(CASE WHEN Action = 'REMOVE' THEN 1 END) as removals,
+            COUNT(DISTINCT SurveyResponseNumber || '-' || QuestionID) as responses_modified,
+            COUNT(DISTINCT AppliedBy) as editors,
+            COUNT(DISTINCT TagID) as unique_tags_modified
+        FROM ManualTagOverrides
+        """
+        
+        stats = conn.execute(stats_query).fetchone()
+        conn.close()
+        
+        return jsonify(dict(stats))
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/response/<int:response_id>/highlight', methods=['GET'])
+def get_response_highlights(response_id):
+    """Get text highlighting data for a response based on tagging keywords"""
+    try:
+        conn = get_db_connection()
+        
+        # Get response text and current tags
+        response_query = """
+        SELECT f.ResponseText
+        FROM FactSurveyResponses f
+        WHERE f.ResponseID = ?
+        """
+        response_result = conn.execute(response_query, (response_id,)).fetchone()
+        
+        if not response_result:
+            conn.close()
+            return jsonify({"error": "Response not found"}), 404
+            
+        response_text = response_result['ResponseText']
+        
+        # Get current effective tags for this response using the same logic
+        response_info_query = """
+        SELECT SurveyResponseNumber, QuestionID 
+        FROM FactSurveyResponses 
+        WHERE ResponseID = ?
+        """
+        response_info = conn.execute(response_info_query, (response_id,)).fetchone()
+        
+        if not response_info:
+            conn.close()
+            return jsonify({"error": "Response info not found"}), 404
+            
+        # Get effective tags with override logic
+        effective_tags_query = """
+        WITH EffectiveTags AS (
+            -- Start with original tags
+            SELECT bt.TagID
+            FROM BridgeResponseTags bt
+            WHERE bt.ResponseID = ?
+            
+            UNION
+            
+            -- Add manual additions
+            SELECT mto.TagID
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ? 
+            AND mto.Action = 'ADD'
+        ),
+        RemovedTags AS (
+            -- Get manually removed tags
+            SELECT mto.TagID
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ? 
+            AND mto.Action = 'REMOVE'
+        ),
+        FinalTags AS (
+            -- Final effective tags (all tags minus removed ones)
+            SELECT TagID FROM EffectiveTags
+            WHERE TagID NOT IN (SELECT TagID FROM RemovedTags)
+        )
+        SELECT DISTINCT 
+            ft.TagID,
+            dt.TagName,
+            dt.TagCategory,
+            dt.TagDescription
+        FROM FinalTags ft
+        JOIN DimTags dt ON ft.TagID = dt.TagID
+        WHERE dt.IsActive = 1
+        ORDER BY dt.TagName
+        """
+        
+        effective_tags = conn.execute(effective_tags_query, (
+            response_id,
+            response_info['SurveyResponseNumber'], response_info['QuestionID'],
+            response_info['SurveyResponseNumber'], response_info['QuestionID']
+        )).fetchall()
+        
+        effective_tags = [dict(tag) for tag in effective_tags]
+        
+        # Define the same keyword mapping as in your Python tagging algorithm
+        tag_keywords = {
+            'Compensation & Incentives': {
+                'primary': ['compensation', 'salary', 'pay', 'wage', 'bonus', 'incentive', 'sign on bonus'],
+                'secondary': ['financial incentive', 'tuition assistance', 'student loan', 'pay well', 'no money', 'paying student loans', 'loan forgiveness'],
+                'context': ['increase', 'competitive', 'better', 'higher', 'financial', 'money']
+            },
+            'Behavioral Health Need': {
+                'primary': ['behavioral health', 'mental health', 'psychology', 'psychiatry', 'psychiatric care', 'psychiatric'],
+                'secondary': ['counseling', 'therapy', 'trauma', 'addiction', 'psych eval', 'mental health services'],
+                'context': ['services', 'treatment', 'support', 'care', 'patients']
+            },
+            'Burnout & Wellbeing': {
+                'primary': ['burnout', 'burn out', 'wellbeing', 'wellness', 'work-life balance', 'work life balance'],
+                'secondary': ['stress', 'exhaustion', 'fatigue', 'self-care', 'worn down', 'wears down', 'overworked', 'dissatisfaction'],
+                'context': ['management', 'prevention', 'support', 'balance', 'employees']
+            },
+            'Funding & Grants': {
+                'primary': ['funding', 'grant', 'budget'],
+                'secondary': ['financial support', 'resources to pay', 'tuition reimbursement', 'tuition assistance'],
+                'context': ['federal', 'state', 'apply', 'seek']
+            },
+            'Leadership Development': {
+                'primary': ['leadership development', 'leadership training', 'management training', 'supervision', 'leadership tracks'],
+                'secondary': ['leadership', 'management', 'supervisor training', 'executive', 'supervision skills', 'leaders'],
+                'context': ['skills', 'program', 'course', 'promotion', 'training at each level']
+            },
+            'Licensing & Scope': {
+                'primary': ['license', 'licensing', 'scope of practice', 'certification'],
+                'secondary': ['credential', 'accreditation', 'board certified'],
+                'context': ['requirements', 'maintain', 'renew']
+            },
+            'Childcare Support': {
+                'primary': ['childcare', 'child care', 'daycare'],
+                'secondary': ['family support', 'dependent care'],
+                'context': ['benefits', 'assistance', 'services']
+            },
+            'Housing & Transportation': {
+                'primary': ['housing', 'transportation', 'affordable housing'],
+                'secondary': ['commute', 'travel', 'relocation', 'finding housing'],
+                'context': ['assistance', 'support', 'stipend', 'crisis', 'help with']
+            },
+            'Workforce Challenges': {
+                'primary': ['shortage', 'understaffed', 'short staffed', 'staffing shortage', 'gaping hole', 'lack of', 'not enough', 'scarce', 'vacant', 'hard to hire', 'difficult to hire', 'recruitment', 'recruiting', 'hire', 'hiring', 'attract'],
+                'secondary': ['turnover', 'high turnover', 'leaving', 'staff leaving', 'people leaving', 'contract staff', 'temp workers', 'agency staff', 'retention', 'empty positions', 'open positions', 'need more', 'need staff'],
+                'context': ['workforce', 'positions', 'roles', 'employees', 'staff', 'workers', 'hiring', 'recruitment', 'talent', 'personnel', 'challenges']
+            },
+            'Training & Development': {
+                'primary': ['professional development', 'continuing education', 'cme', 'continuing ed', 'residency', 'fellowship', 'medical school', 'terminology', 'simulation', 'sim lab', 'simulation training', 'technology training', 'tech training'],
+                'secondary': ['career development', 'skill development', 'conferences', 'educators', 'university', 'academic', 'rotation', 'hands-on training', 'skills lab', 'practice lab', 'emr training', 'software training'],
+                'context': ['opportunities', 'program', 'support', 'grow', 'introduced', 'training', 'education', 'practice', 'lab', 'computer', 'digital', 'electronic']
+            },
+            'Clinical Services': {
+                'primary': ['specialist', 'specialty care', 'subspecialty', 'primary care', 'family medicine', 'family physician', 'primary care physician', 'interdisciplinary', 'multidisciplinary', 'team-based care'],
+                'secondary': ['specialized', 'quaternary care', 'general practice', 'family doctor', 'pcp', 'collaborative care', 'care coordination'],
+                'context': ['referral', 'specialized', 'advanced', 'preventive', 'routine', 'general', 'team', 'collaboration', 'coordination']
+            },
+            'Clinical Competency': {
+                'primary': ['clinical competency', 'clinical skills', 'patient care skills'],
+                'secondary': ['bedside manner', 'clinical training'],
+                'context': ['evidence-based', 'best practices', 'quality']
+            },
+            'Quality & Safety': {
+                'primary': ['quality improvement', 'patient safety', 'quality assurance'],
+                'secondary': ['outcomes', 'safety', 'quality'],
+                'context': ['improvement', 'measures', 'initiatives']
+            },
+            'Rural Care': {
+                'primary': ['rural health', 'rural care', 'rural hospital', 'rural community'],
+                'secondary': ['rural areas', 'rural', 'geographic locations in rural'],
+                'context': ['remote', 'isolated', 'distance']
+            },
+            'Allied Health': {
+                'primary': ['social worker', 'social workers', 'patient navigator', 'patient navigators'],
+                'secondary': ['laboratory technician', 'lab tech', 'respiratory therapist', 'rad tech', 'dietitian', 'physical therapist', 'occupational therapist', 'allied health'],
+                'context': ['technician', 'therapist', 'navigator', 'support staff']
+            }
+        }
+        
+        # Find matching keywords for each effective tag
+        highlights = []
+        text_lower = response_text.lower()
+        
+        for tag in effective_tags:
+            tag_name = tag['TagName']
+            if tag_name in tag_keywords:
+                keywords = tag_keywords[tag_name]
+                
+                # Check all keyword types
+                for keyword_type in ['primary', 'secondary', 'context']:
+                    if keyword_type in keywords:
+                        for keyword in keywords[keyword_type]:
+                            if keyword in text_lower:
+                                # Find the exact position in the original text
+                                start_idx = text_lower.find(keyword)
+                                while start_idx != -1:
+                                    highlights.append({
+                                        'keyword': keyword,
+                                        'tag_name': tag_name,
+                                        'tag_category': tag['TagCategory'],
+                                        'start': start_idx,
+                                        'end': start_idx + len(keyword),
+                                        'type': keyword_type,
+                                        'score': 3 if keyword_type == 'primary' else 2 if keyword_type == 'secondary' else 1
+                                    })
+                                    start_idx = text_lower.find(keyword, start_idx + 1)
+        
+        # Sort highlights by position
+        highlights.sort(key=lambda x: x['start'])
+        
+        conn.close()
+        return jsonify({
+            'response_text': response_text,
+            'highlights': highlights,
+            'tags': effective_tags
+        })
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

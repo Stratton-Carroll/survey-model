@@ -25,7 +25,7 @@ ChartJS.register(
 );
 
 function App() {
-  const [currentView, setCurrentView] = useState('tags'); // 'tags', 'tag-detail', 'responses', 'analytics'
+  const [currentView, setCurrentView] = useState('tags'); // 'tags', 'tag-detail', 'responses', 'analytics', 'tag-editor'
   const [tags, setTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState(null);
   const [responses, setResponses] = useState([]);
@@ -36,27 +36,38 @@ function App() {
   const [analytics, setAnalytics] = useState(null);
   const [selectedRoleCategory, setSelectedRoleCategory] = useState(null);
   const [selectedAnalyticsTag, setSelectedAnalyticsTag] = useState(null);
+  const [selectedResponseForEditing, setSelectedResponseForEditing] = useState(null);
+  const [availableTags, setAvailableTags] = useState([]);
+  const [effectiveTags, setEffectiveTags] = useState([]);
+  const [overrideStats, setOverrideStats] = useState(null);
+  const [previousView, setPreviousView] = useState('tags');
 
   useEffect(() => {
     if (currentView === 'tags') {
-      fetch('http://127.0.0.1:5000/api/tags')
+      fetch('http://10.71.0.5:5000/api/tags')
         .then(response => response.json())
         .then(data => setTags(data))
         .catch(error => console.error('Error fetching tags:', error));
     } else if (currentView === 'responses') {
       setLoading(true);
-      fetch('http://127.0.0.1:5000/api/responses')
+      fetch('http://10.71.0.5:5000/api/responses')
         .then(response => response.json())
         .then(data => setQuestionsWithResponses(data))
         .catch(error => console.error('Error fetching responses:', error))
         .finally(() => setLoading(false));
     } else if (currentView === 'analytics') {
       setLoading(true);
-      fetch('http://127.0.0.1:5000/api/analytics')
+      fetch('http://10.71.0.5:5000/api/analytics')
         .then(response => response.json())
         .then(data => setAnalytics(data))
         .catch(error => console.error('Error fetching analytics:', error))
         .finally(() => setLoading(false));
+    } else if (currentView === 'tag-editor') {
+      // Fetch override stats for tag editor
+      fetch('http://10.71.0.5:5000/api/overrides/stats')
+        .then(response => response.json())
+        .then(data => setOverrideStats(data))
+        .catch(error => console.error('Error fetching override stats:', error));
     }
   }, [currentView]);
 
@@ -65,7 +76,7 @@ function App() {
     setCurrentView('tag-detail');
     setLoading(true);
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/tags/${tag.TagID}/responses`);
+      const response = await fetch(`http://10.71.0.5:5000/api/tags/${tag.TagID}/responses`);
       const data = await response.json();
       setResponses(data);
     } catch (error) {
@@ -92,9 +103,95 @@ function App() {
     setCurrentView('analytics');
   };
 
+  const handleTagEditor = () => {
+    setCurrentView('tag-editor');
+  };
+
+  const handleBackFromTagEditor = () => {
+    setSelectedResponseForEditing(null);
+    setCurrentView(previousView);
+  };
+
+  const handleEditResponseTags = async (response) => {
+    setPreviousView(currentView);
+    setSelectedResponseForEditing(response);
+    setCurrentView('tag-editor');
+    setLoading(true);
+    
+    try {
+      // Fetch available tags and current effective tags
+      const [availableResponse, effectiveResponse] = await Promise.all([
+        fetch('http://10.71.0.5:5000/api/tags/available'),
+        fetch(`http://10.71.0.5:5000/api/response/${response.ResponseID}/tags`)
+      ]);
+      
+      const availableData = await availableResponse.json();
+      const effectiveData = await effectiveResponse.json();
+      
+      setAvailableTags(availableData);
+      setEffectiveTags(effectiveData);
+    } catch (error) {
+      console.error('Error fetching tag data:', error);
+    }
+    
+    setLoading(false);
+  };
+
+  const handleAddTag = async (tagId) => {
+    try {
+      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tag_id: tagId,
+          action: 'ADD',
+          applied_by: 'Policy Team Member',
+          notes: 'Manual tag addition via UI'
+        })
+      });
+      
+      if (response.ok) {
+        // Refresh effective tags
+        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`);
+        const effectiveData = await effectiveResponse.json();
+        setEffectiveTags(effectiveData);
+      }
+    } catch (error) {
+      console.error('Error adding tag:', error);
+    }
+  };
+
+  const handleRemoveTag = async (tagId) => {
+    try {
+      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tag_id: tagId,
+          action: 'REMOVE',
+          applied_by: 'Policy Team Member',
+          notes: 'Manual tag removal via UI'
+        })
+      });
+      
+      if (response.ok) {
+        // Refresh effective tags
+        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`);
+        const effectiveData = await effectiveResponse.json();
+        setEffectiveTags(effectiveData);
+      }
+    } catch (error) {
+      console.error('Error removing tag:', error);
+    }
+  };
+
   const fetchTagDistribution = async (questionId) => {
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/questions/${questionId}/tag-distribution`);
+      const response = await fetch(`http://10.71.0.5:5000/api/questions/${questionId}/tag-distribution`);
       const data = await response.json();
       setTagDistributions(prev => ({
         ...prev,
@@ -124,6 +221,366 @@ function App() {
     </div>
   );
 
+  // Highlighted Text Component
+  const HighlightedText = ({ responseId, text, showLegend = true }) => {
+    const [highlights, setHighlights] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      if (responseId && text) {
+        setLoading(true);
+        fetch(`http://10.71.0.5:5000/api/response/${responseId}/highlight`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.highlights) {
+              setHighlights(data.highlights);
+            }
+          })
+          .catch(error => console.error('Error fetching highlights:', error))
+          .finally(() => setLoading(false));
+      }
+    }, [responseId, text]);
+
+    const getCategoryColor = (category, type) => {
+      const colors = {
+        'Clinical': { primary: '#e11d48', secondary: '#fda4af', context: '#fecdd3' },
+        'Financial': { primary: '#059669', secondary: '#6ee7b7', context: '#d1fae5' },
+        'Wellness': { primary: '#7c3aed', secondary: '#c4b5fd', context: '#ede9fe' },
+        'Support': { primary: '#dc2626', secondary: '#fca5a5', context: '#fed7d7' },
+        'Professional': { primary: '#0891b2', secondary: '#67e8f9', context: '#cffafe' },
+        'Workforce': { primary: '#ea580c', secondary: '#fdba74', context: '#fed7aa' },
+        'Regulatory': { primary: '#7c2d12', secondary: '#fbbf24', context: '#fef3c7' },
+        'Geographic': { primary: '#166534', secondary: '#86efac', context: '#dcfce7' },
+        'Profession': { primary: '#581c87', secondary: '#d8b4fe', context: '#f3e8ff' }
+      };
+      return colors[category]?.[type] || colors['Clinical'][type];
+    };
+
+    const renderHighlightedText = () => {
+      if (!highlights.length) {
+        return <span>{text}</span>;
+      }
+
+      // Sort highlights by start position and handle overlaps
+      const sortedHighlights = [...highlights].sort((a, b) => a.start - b.start);
+      const segments = [];
+      let lastEnd = 0;
+
+      sortedHighlights.forEach((highlight) => {
+        // Add text before highlight
+        if (highlight.start > lastEnd) {
+          segments.push({
+            text: text.substring(lastEnd, highlight.start),
+            isHighlight: false
+          });
+        }
+
+        // Add highlighted text (skip if overlapping)
+        if (highlight.start >= lastEnd) {
+          segments.push({
+            text: text.substring(highlight.start, highlight.end),
+            isHighlight: true,
+            highlight: highlight
+          });
+          lastEnd = Math.max(lastEnd, highlight.end);
+        }
+      });
+
+      // Add remaining text
+      if (lastEnd < text.length) {
+        segments.push({
+          text: text.substring(lastEnd),
+          isHighlight: false
+        });
+      }
+
+      return segments.map((segment, index) => {
+        if (segment.isHighlight) {
+          const { highlight } = segment;
+          const color = getCategoryColor(highlight.tag_category, highlight.type);
+          return (
+            <span
+              key={index}
+              className="keyword-highlight"
+              style={{
+                backgroundColor: color,
+                padding: '2px 4px',
+                borderRadius: '3px',
+                margin: '0 1px',
+                position: 'relative',
+                borderLeft: `3px solid ${getCategoryColor(highlight.tag_category, 'primary')}`,
+                fontWeight: highlight.type === 'primary' ? 'bold' : 'normal'
+              }}
+              title={`${highlight.tag_name} (${highlight.tag_category}) - ${highlight.type} keyword (score: ${highlight.score})`}
+            >
+              {segment.text}
+            </span>
+          );
+        }
+        return <span key={index}>{segment.text}</span>;
+      });
+    };
+
+    const getLegendItems = () => {
+      const uniqueTags = highlights.reduce((acc, highlight) => {
+        const key = `${highlight.tag_name}-${highlight.tag_category}`;
+        if (!acc[key]) {
+          acc[key] = {
+            tagName: highlight.tag_name,
+            tagCategory: highlight.tag_category,
+            types: new Set()
+          };
+        }
+        acc[key].types.add(highlight.type);
+        return acc;
+      }, {});
+
+      return Object.values(uniqueTags);
+    };
+
+    if (loading) {
+      return <span className="highlight-loading">🔍 Analyzing keywords...</span>;
+    }
+
+    return (
+      <div className="highlighted-text-container">
+        <div className="highlighted-text">
+          {renderHighlightedText()}
+        </div>
+        
+        {showLegend && highlights.length > 0 && (
+          <div className="highlight-legend">
+            <div className="legend-header">
+              <span className="legend-title">💡 AI Keyword Analysis</span>
+              <span className="legend-subtitle">See why each tag was applied</span>
+            </div>
+            <div className="legend-items">
+              {getLegendItems().map((item, index) => (
+                <div key={index} className="legend-item">
+                  <div 
+                    className="legend-color" 
+                    style={{ 
+                      backgroundColor: getCategoryColor(item.tagCategory, 'secondary'),
+                      borderLeft: `3px solid ${getCategoryColor(item.tagCategory, 'primary')}`
+                    }}
+                  ></div>
+                  <span className="legend-text">
+                    <strong>{item.tagName}</strong> ({item.tagCategory})
+                    {Array.from(item.types).map(type => (
+                      <span key={type} className={`keyword-type ${type}`}>
+                        {type === 'primary' ? '🎯' : type === 'secondary' ? '📍' : '💡'}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="legend-key">
+              <span className="key-item">🎯 Primary keyword</span>
+              <span className="key-item">📍 Secondary keyword</span>
+              <span className="key-item">💡 Context keyword</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Tag Editor Component
+  const TagEditor = () => {
+    if (!selectedResponseForEditing) {
+      return (
+        <div className="tag-editor-home">
+          <div className="editor-welcome">
+            <div className="welcome-icon">🏷️</div>
+            <h2>Tag Editor</h2>
+            <p className="welcome-description">
+              Select a response from any view and click "✏️ Edit Tags" to start editing tags manually.
+            </p>
+            {overrideStats && (
+              <div className="override-stats-modern">
+                <h3>Manual Tag Override Statistics</h3>
+                <div className="stats-cards">
+                  <div className="stat-card">
+                    <div className="stat-number">{overrideStats.total_overrides}</div>
+                    <div className="stat-label">Total Overrides</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-number">{overrideStats.additions}</div>
+                    <div className="stat-label">Tags Added</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-number">{overrideStats.removals}</div>
+                    <div className="stat-label">Tags Removed</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-number">{overrideStats.responses_modified}</div>
+                    <div className="stat-label">Responses Modified</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    const effectiveTagIds = new Set(effectiveTags.map(tag => tag.TagID));
+    const manuallyAddedTagIds = new Set(effectiveTags.filter(tag => tag.IsManuallyAdded).map(tag => tag.TagID));
+
+    const groupedTags = availableTags.reduce((acc, tag) => {
+      if (!acc[tag.TagCategory]) {
+        acc[tag.TagCategory] = [];
+      }
+      acc[tag.TagCategory].push(tag);
+      return acc;
+    }, {});
+
+    return (
+      <div className="tag-editor-active">
+        {/* Question Context - Always Visible */}
+        <div className="question-context-sticky">
+          <div className="context-header">
+            <h3>Editing Response for Question:</h3>
+            <p className="question-text">{selectedResponseForEditing.QuestionShort || selectedResponseForEditing.QuestionText}</p>
+          </div>
+        </div>
+
+        {/* Response Context */}
+        <div className="response-context-modern">
+          <div className="response-card-editor">
+            <div className="response-header-modern">
+              <div className="response-meta-modern">
+                <span className="role-badge">{selectedResponseForEditing.RoleName}</span>
+                <span className="location-badge">{selectedResponseForEditing.PrimaryCounty}</span>
+                {selectedResponseForEditing.OrganizationName && (
+                  <span className="org-badge">{selectedResponseForEditing.OrganizationName}</span>
+                )}
+              </div>
+            </div>
+            <div className="response-text-modern">
+              <HighlightedText 
+                responseId={selectedResponseForEditing.ResponseID} 
+                text={selectedResponseForEditing.ResponseText}
+                showLegend={true}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tag Editing Interface */}
+        <div className="tag-editing-modern">
+          {/* Current Tags Section */}
+          <div className="current-tags-section">
+            <div className="section-header">
+              <h4>🏷️ Current Tags ({effectiveTags.length})</h4>
+              <div className="section-subtitle">Click × to remove a tag</div>
+            </div>
+            <div className="current-tags-grid">
+              {effectiveTags.length === 0 ? (
+                <div className="no-tags-message">
+                  <span className="no-tags-icon">📝</span>
+                  <p>No tags assigned yet. Add some tags below!</p>
+                </div>
+              ) : (
+                effectiveTags.map((tag) => (
+                  <div key={tag.TagID} className={`current-tag-pill ${manuallyAddedTagIds.has(tag.TagID) ? 'manually-added' : 'original'}`}>
+                    <div className="tag-content">
+                      <span className="tag-name">{tag.TagName}</span>
+                      <span className="tag-category">{tag.TagCategory}</span>
+                      {manuallyAddedTagIds.has(tag.TagID) && (
+                        <span className="manual-indicator">✨ Manual</span>
+                      )}
+                    </div>
+                    <button 
+                      className="remove-tag-button"
+                      onClick={() => handleRemoveTag(tag.TagID)}
+                      title={`Remove "${tag.TagName}" tag`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Available Tags Section */}
+          <div className="available-tags-section">
+            <div className="section-header">
+              <h4>➕ Add Tags</h4>
+              <div className="section-subtitle">Choose from available tags organized by category</div>
+            </div>
+            
+            <div className="tag-categories-modern">
+              {Object.entries(groupedTags).map(([category, tags]) => {
+                const availableTagsInCategory = tags.filter(tag => !effectiveTagIds.has(tag.TagID));
+                if (availableTagsInCategory.length === 0) return null;
+                
+                return (
+                  <div key={category} className="tag-category-modern">
+                    <div className="category-header">
+                      <h5 className="category-name">{category}</h5>
+                      <span className="category-count">({availableTagsInCategory.length} available)</span>
+                    </div>
+                    <div className="available-tags-grid">
+                      {availableTagsInCategory.map((tag) => (
+                        <button 
+                          key={tag.TagID} 
+                          className="available-tag-button"
+                          onClick={() => handleAddTag(tag.TagID)}
+                          title={tag.TagDescription || `Add "${tag.TagName}" tag`}
+                        >
+                          <div className="tag-button-content">
+                            <span className="tag-name">{tag.TagName}</span>
+                            <span className="add-icon">+</span>
+                          </div>
+                          {tag.TagDescription && (
+                            <div className="tag-description">{tag.TagDescription}</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Tag Editor view
+  if (currentView === 'tag-editor') {
+    return (
+      <div className="App">
+        <Logo />
+        <header className="App-header">
+          <div className="nav-buttons">
+            {selectedResponseForEditing ? (
+              <button onClick={handleBackFromTagEditor} className="back-button">← Back to {previousView === 'tags' ? 'Tags' : previousView === 'responses' ? 'Responses' : previousView === 'analytics' ? 'Analytics' : 'Previous View'}</button>
+            ) : (
+              <button onClick={handleViewTags} className="back-button">← Back to Tags</button>
+            )}
+            <button onClick={handleViewResponses} className="nav-button">View All Responses</button>
+            <button onClick={handleViewAnalytics} className="nav-button">Analytics</button>
+          </div>
+          <div className="page-title">
+            <h1>Tag Editor</h1>
+            <p className="page-description">Manually add or remove tags from survey responses</p>
+          </div>
+          
+          {loading ? (
+            <p>Loading tag editor...</p>
+          ) : (
+            <TagEditor />
+          )}
+        </header>
+      </div>
+    );
+  }
+
   // Analytics view
   if (currentView === 'analytics') {
     return (
@@ -133,6 +590,7 @@ function App() {
           <div className="nav-buttons">
             <button onClick={handleViewTags} className="back-button">← Back to Tags</button>
             <button onClick={handleViewResponses} className="nav-button">View All Responses</button>
+            <button onClick={handleTagEditor} className="nav-button">Tag Editor</button>
           </div>
           <div className="page-title">
             <h1>Survey Analytics Dashboard</h1>
@@ -467,6 +925,7 @@ function App() {
             <button onClick={handleBackClick} className="back-button">← Back to Tags</button>
             <button onClick={handleViewResponses} className="nav-button">View All Responses</button>
             <button onClick={handleViewAnalytics} className="nav-button">Analytics</button>
+            <button onClick={handleTagEditor} className="nav-button">Tag Editor</button>
           </div>
           <h1>{selectedTag.TagName}</h1>
           <p className="tag-info">
@@ -491,9 +950,22 @@ function App() {
                           <span className="org-type">{response.OrganizationName}</span>
                         )}
                       </div>
+                      <button 
+                        className="edit-tags-btn"
+                        onClick={() => handleEditResponseTags(response)}
+                        title="Edit tags for this response"
+                      >
+                        ✏️ Edit Tags
+                      </button>
                     </div>
                     <div className="response-content">
-                      <p className="response-text">{response.ResponseText}</p>
+                      <div className="response-text">
+                        <HighlightedText 
+                          responseId={response.ResponseID} 
+                          text={response.ResponseText}
+                          showLegend={false}
+                        />
+                      </div>
                       <div className="response-tags">
                         <div className="tags-list">
                           {response.Tags && response.Tags.map((tag, tagIndex) => (
@@ -525,6 +997,7 @@ function App() {
           <div className="nav-buttons">
             <button onClick={handleViewTags} className="back-button">← Back to Tags</button>
             <button onClick={handleViewAnalytics} className="nav-button">Analytics</button>
+            <button onClick={handleTagEditor} className="nav-button">Tag Editor</button>
           </div>
           <div className="questions-container">
             {loading ? (
@@ -653,9 +1126,22 @@ function App() {
                                 <span className="org-type">{response.OrganizationName}</span>
                               )}
                             </div>
+                            <button 
+                              className="edit-tags-btn"
+                              onClick={() => handleEditResponseTags(response)}
+                              title="Edit tags for this response"
+                            >
+                              ✏️ Edit Tags
+                            </button>
                           </div>
                           <div className="response-content">
-                            <p className="response-text">{response.ResponseText}</p>
+                            <div className="response-text">
+                              <HighlightedText 
+                                responseId={response.ResponseID} 
+                                text={response.ResponseText}
+                                showLegend={false}
+                              />
+                            </div>
                             <div className="response-tags">
                               <div className="tags-list">
                                 {response.Tags && response.Tags.map((tag, tagIndex) => (
@@ -690,6 +1176,7 @@ function App() {
         <div className="nav-buttons">
           <button onClick={handleViewResponses} className="nav-button">View All Responses</button>
           <button onClick={handleViewAnalytics} className="nav-button">Analytics</button>
+          <button onClick={handleTagEditor} className="nav-button">Tag Editor</button>
         </div>
         <div className="page-title">
           <h1>Healthcare Survey Analysis</h1>
