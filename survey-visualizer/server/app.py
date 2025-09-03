@@ -517,59 +517,60 @@ def get_effective_tags(response_id):
             
         # Get effective tags with override logic
         effective_tags_query = """
-        WITH EffectiveTags AS (
-            -- Start with original tags
-            SELECT bt.TagID
+        WITH OriginalTags AS (
+            -- Start with original tags from algorithm
+            SELECT bt.TagID, 'ORIGINAL' as Source
             FROM BridgeResponseTags bt
             WHERE bt.ResponseID = ?
+        ),
+        LatestOverrides AS (
+            -- Get the most recent action for each tag (in case of multiple overrides)
+            SELECT TagID, Action, ROW_NUMBER() OVER (PARTITION BY TagID ORDER BY AppliedDate DESC) as rn
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ?
+        ),
+        CurrentOverrides AS (
+            -- Only keep the latest action for each tag
+            SELECT TagID, Action
+            FROM LatestOverrides
+            WHERE rn = 1
+        ),
+        FinalTags AS (
+            -- Apply override logic: 
+            -- 1. Include original tags that have no override or have ADD override
+            -- 2. Include manually added tags (tags not in original but have ADD override)
+            SELECT 
+                ot.TagID, 
+                CASE WHEN co.Action = 'ADD' THEN 'MANUAL_ADD' ELSE ot.Source END as Source
+            FROM OriginalTags ot
+            LEFT JOIN CurrentOverrides co ON ot.TagID = co.TagID
+            WHERE co.Action IS NULL OR co.Action = 'ADD'
             
             UNION
             
-            -- Add manual additions
-            SELECT mto.TagID
-            FROM ManualTagOverrides mto
-            WHERE mto.SurveyResponseNumber = ? 
-            AND mto.QuestionID = ? 
-            AND mto.Action = 'ADD'
-        ),
-        RemovedTags AS (
-            -- Get manually removed tags
-            SELECT mto.TagID
-            FROM ManualTagOverrides mto
-            WHERE mto.SurveyResponseNumber = ? 
-            AND mto.QuestionID = ? 
-            AND mto.Action = 'REMOVE'
-        ),
-        FinalTags AS (
-            -- Final effective tags (all tags minus removed ones)
-            SELECT TagID FROM EffectiveTags
-            WHERE TagID NOT IN (SELECT TagID FROM RemovedTags)
+            -- Include tags that are manually added but were never original
+            SELECT co.TagID, 'MANUAL_ADD' as Source
+            FROM CurrentOverrides co
+            WHERE co.Action = 'ADD' 
+            AND co.TagID NOT IN (SELECT TagID FROM OriginalTags)
         )
         SELECT DISTINCT 
             ft.TagID,
             dt.TagName,
             dt.TagCategory,
             dt.TagDescription,
-            CASE 
-                WHEN mto_add.TagID IS NOT NULL THEN 'MANUAL_ADD'
-                ELSE 'ORIGINAL'
-            END as Source,
-            CASE WHEN mto_add.TagID IS NOT NULL THEN 1 ELSE 0 END as IsManuallyAdded,
+            ft.Source,
+            CASE WHEN ft.Source = 'MANUAL_ADD' THEN 1 ELSE 0 END as IsManuallyAdded,
             0 as IsManuallyRemoved
         FROM FinalTags ft
         JOIN DimTags dt ON ft.TagID = dt.TagID
-        LEFT JOIN ManualTagOverrides mto_add ON mto_add.TagID = ft.TagID 
-            AND mto_add.SurveyResponseNumber = ? 
-            AND mto_add.QuestionID = ? 
-            AND mto_add.Action = 'ADD'
         WHERE dt.IsActive = 1
         ORDER BY dt.TagName
         """
         
         tags = conn.execute(effective_tags_query, (
             response_id,
-            response_info['SurveyResponseNumber'], response_info['QuestionID'],
-            response_info['SurveyResponseNumber'], response_info['QuestionID'],
             response_info['SurveyResponseNumber'], response_info['QuestionID']
         )).fetchall()
         
@@ -716,33 +717,41 @@ def get_response_highlights(response_id):
             
         # Get effective tags with override logic
         effective_tags_query = """
-        WITH EffectiveTags AS (
-            -- Start with original tags
+        WITH OriginalTags AS (
+            -- Start with original tags from algorithm
             SELECT bt.TagID
             FROM BridgeResponseTags bt
             WHERE bt.ResponseID = ?
+        ),
+        LatestOverrides AS (
+            -- Get the most recent action for each tag (in case of multiple overrides)
+            SELECT TagID, Action, ROW_NUMBER() OVER (PARTITION BY TagID ORDER BY AppliedDate DESC) as rn
+            FROM ManualTagOverrides mto
+            WHERE mto.SurveyResponseNumber = ? 
+            AND mto.QuestionID = ?
+        ),
+        CurrentOverrides AS (
+            -- Only keep the latest action for each tag
+            SELECT TagID, Action
+            FROM LatestOverrides
+            WHERE rn = 1
+        ),
+        FinalTags AS (
+            -- Apply override logic: 
+            -- 1. Include original tags that have no override or have ADD override
+            -- 2. Include manually added tags (tags not in original but have ADD override)
+            SELECT ot.TagID
+            FROM OriginalTags ot
+            LEFT JOIN CurrentOverrides co ON ot.TagID = co.TagID
+            WHERE co.Action IS NULL OR co.Action = 'ADD'
             
             UNION
             
-            -- Add manual additions
-            SELECT mto.TagID
-            FROM ManualTagOverrides mto
-            WHERE mto.SurveyResponseNumber = ? 
-            AND mto.QuestionID = ? 
-            AND mto.Action = 'ADD'
-        ),
-        RemovedTags AS (
-            -- Get manually removed tags
-            SELECT mto.TagID
-            FROM ManualTagOverrides mto
-            WHERE mto.SurveyResponseNumber = ? 
-            AND mto.QuestionID = ? 
-            AND mto.Action = 'REMOVE'
-        ),
-        FinalTags AS (
-            -- Final effective tags (all tags minus removed ones)
-            SELECT TagID FROM EffectiveTags
-            WHERE TagID NOT IN (SELECT TagID FROM RemovedTags)
+            -- Include tags that are manually added but were never original
+            SELECT co.TagID
+            FROM CurrentOverrides co
+            WHERE co.Action = 'ADD' 
+            AND co.TagID NOT IN (SELECT TagID FROM OriginalTags)
         )
         SELECT DISTINCT 
             ft.TagID,
@@ -757,7 +766,6 @@ def get_response_highlights(response_id):
         
         effective_tags = conn.execute(effective_tags_query, (
             response_id,
-            response_info['SurveyResponseNumber'], response_info['QuestionID'],
             response_info['SurveyResponseNumber'], response_info['QuestionID']
         )).fetchall()
         
@@ -768,7 +776,7 @@ def get_response_highlights(response_id):
             'Compensation & Incentives': {
                 'primary': ['compensation', 'salary', 'pay', 'wage', 'bonus', 'incentive', 'sign on bonus'],
                 'secondary': ['financial incentive', 'tuition assistance', 'student loan', 'pay well', 'no money', 'paying student loans', 'loan forgiveness'],
-                'context': ['increase', 'competitive', 'better', 'higher', 'financial', 'money']
+                'context': ['competitive', 'higher', 'financial', 'money']
             },
             'Behavioral Health Need': {
                 'primary': ['behavioral health', 'mental health', 'psychology', 'psychiatry', 'psychiatric care', 'psychiatric'],

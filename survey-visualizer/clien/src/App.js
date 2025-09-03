@@ -441,7 +441,7 @@ function App() {
         {/* Question Context - Always Visible */}
         <div className="question-context-sticky">
           <div className="context-header">
-            <h3>Editing Response for Question:</h3>
+            <h3>Editing Response for Question ID {selectedResponseForEditing.QuestionID}:</h3>
             <p className="question-text">{selectedResponseForEditing.QuestionShort || selectedResponseForEditing.QuestionText}</p>
           </div>
         </div>
@@ -451,6 +451,7 @@ function App() {
           <div className="response-card-editor">
             <div className="response-header-modern">
               <div className="response-meta-modern">
+                <span className="response-id-badge">ID: {selectedResponseForEditing.ResponseID}</span>
                 <span className="role-badge">{selectedResponseForEditing.RoleName}</span>
                 <span className="location-badge">{selectedResponseForEditing.PrimaryCounty}</span>
                 {selectedResponseForEditing.OrganizationName && (
@@ -944,6 +945,7 @@ function App() {
                   <div className="full-response-card">
                     <div className="response-header">
                       <div className="response-meta">
+                        <span className="response-id">ID: {response.ResponseID}</span>
                         <span className="role">{response.RoleName}</span>
                         <span className="location">{response.PrimaryCounty}</span>
                         {response.OrganizationName && (
@@ -1010,7 +1012,7 @@ function App() {
                     onClick={() => toggleQuestion(question.QuestionID)}
                   >
                     <div className="question-header-content">
-                      <h2>{question.QuestionShort}</h2>
+                      <h2>Q{question.QuestionID}: {question.QuestionShort}</h2>
                       <p className="question-full">{question.QuestionText}</p>
                       <span className="response-count">{question.responses.length} responses</span>
                     </div>
@@ -1120,6 +1122,7 @@ function App() {
                         <div key={response.ResponseID} className="full-response-card">
                           <div className="response-header">
                             <div className="response-meta">
+                              <span className="response-id">ID: {response.ResponseID}</span>
                               <span className="role">{response.RoleName}</span>
                               <span className="location">{response.PrimaryCounty}</span>
                               {response.OrganizationName && (
