@@ -122,7 +122,7 @@ function App() {
       // Fetch available tags and current effective tags
       const [availableResponse, effectiveResponse] = await Promise.all([
         fetch('http://10.71.0.5:5000/api/tags/available'),
-        fetch(`http://10.71.0.5:5000/api/response/${response.ResponseID}/tags`)
+        fetch(`http://10.71.0.5:5000/api/responses/${response.ResponseID}/effective-tags`)
       ]);
       
       const availableData = await availableResponse.json();
@@ -969,15 +969,53 @@ function App() {
                         />
                       </div>
                       <div className="response-tags">
-                        <div className="tags-list">
-                          {response.Tags && response.Tags.map((tag, tagIndex) => (
-                            <span 
-                              key={tagIndex} 
-                              className={`tag-badge ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
-                            >
-                              {tag.TagName}
-                            </span>
-                          ))}
+                        <div className="tags-list hierarchical">
+                          {response.Tags && (() => {
+                            // Group tags by primary/sub for hierarchical display
+                            const primaryTags = response.Tags.filter(tag => tag.TagLevel === 1);
+                            const subTags = response.Tags.filter(tag => tag.TagLevel === 2);
+                            
+                            return (
+                              <>
+                                {/* Primary Tags */}
+                                {primaryTags.map((tag, tagIndex) => (
+                                  <div key={`primary-${tagIndex}`} className="tag-group">
+                                    <span 
+                                      className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                    >
+                                      🏷️ {tag.TagName}
+                                    </span>
+                                    
+                                    {/* Sub-tags for this primary tag */}
+                                    {subTags
+                                      .filter(subTag => subTag.ParentTagID === tag.TagID)
+                                      .map((subTag, subIndex) => (
+                                        <span 
+                                          key={`sub-${subIndex}`}
+                                          className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''}`}
+                                        >
+                                          ↳ {subTag.TagName}
+                                        </span>
+                                      ))
+                                    }
+                                  </div>
+                                ))}
+                                
+                                {/* Orphaned sub-tags (if any) */}
+                                {subTags
+                                  .filter(subTag => !primaryTags.some(primary => primary.TagID === subTag.ParentTagID))
+                                  .map((tag, tagIndex) => (
+                                    <span 
+                                      key={`orphan-${tagIndex}`}
+                                      className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                    >
+                                      ↳ {tag.TagName} <small>(orphaned)</small>
+                                    </span>
+                                  ))
+                                }
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -1023,101 +1061,113 @@ function App() {
                   
                   {expandedQuestions.has(question.QuestionID) && (
                     <div className="question-responses">
-                      {tagDistributions[question.QuestionID] && (
-                        <div className="tag-distribution-chart">
-                          <Bar
-                            data={{
-                              labels: tagDistributions[question.QuestionID].map(tag => tag.TagName),
-                              datasets: [{
-                                label: 'Responses',
-                                data: tagDistributions[question.QuestionID].map(tag => tag.TagCount),
-                                backgroundColor: '#7a9944',
-                                borderColor: '#3d003d',
-                                borderWidth: 2,
-                                borderRadius: 6,
-                                barThickness: 'flex',
-                                maxBarThickness: 50
-                              }]
-                            }}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              layout: {
-                                padding: {
-                                  top: 10,
-                                  bottom: 25,
-                                  left: 10,
-                                  right: 10
-                                }
-                              },
-                              plugins: {
-                                legend: {
-                                  display: false
+                      {tagDistributions[question.QuestionID] && (() => {
+                        const distribution = tagDistributions[question.QuestionID] || [];
+                        const topTags = [...distribution]
+                          .sort((a, b) => b.TagCount - a.TagCount)
+                          .slice(0, 10);
+
+                        return (
+                          <div className="tag-distribution-chart">
+                            <Bar
+                              data={{
+                                labels: topTags.map(tag => tag.TagName),
+                                datasets: [{
+                                  label: 'Responses',
+                                  data: topTags.map(tag => tag.TagCount),
+                                  backgroundColor: '#7a9944',
+                                  borderColor: '#3d003d',
+                                  borderWidth: 2,
+                                  borderRadius: 6,
+                                  barThickness: 'flex',
+                                  maxBarThickness: 50
+                                }]
+                              }}
+                              options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                layout: {
+                                  padding: {
+                                    top: 10,
+                                    bottom: 80, // extra room for slanted labels and x-axis title
+                                    left: 50,   // room for y-axis title and ticks
+                                    right: 20
+                                  }
                                 },
-                                title: {
-                                  display: false
-                                },
-                                tooltip: {
-                                  callbacks: {
-                                    title: (tooltipItems) => {
-                                      const index = tooltipItems[0].dataIndex;
-                                      return tagDistributions[question.QuestionID][index].TagName;
+                                plugins: {
+                                  legend: { display: false },
+                                  title: { display: false },
+                                  tooltip: {
+                                    callbacks: {
+                                      title: (tooltipItems) => {
+                                        const index = tooltipItems[0].dataIndex;
+                                        return topTags[index]?.TagName || '';
+                                      }
                                     }
                                   }
-                                }
-                              },
-                              scales: {
-                                x: {
-                                  ticks: {
-                                    color: 'rgba(255, 255, 255, 0.95)',
-                                    font: {
-                                      size: 11,
-                                      weight: '500'
+                                },
+                                scales: {
+                                  x: {
+                                    display: true,
+                                    title: {
+                                      display: true,
+                                      text: 'Tags',
+                                      color: '#374151',
+                                      padding: { top: 16 },
+                                      font: { size: 12, weight: '600' }
                                     },
-                                    maxRotation: 45,
-                                    minRotation: 45,
-                                    padding: 15,
-                                    autoSkip: false,
-                                    textOverflow: 'show'
+                                    ticks: {
+                                      color: '#374151',
+                                      font: { size: 11, weight: '500' },
+                                      maxRotation: 45,
+                                      minRotation: 45,
+                                      padding: 8,
+                                      autoSkip: false,
+                                      callback: function(value) {
+                                        // Return full label (no truncation) so longer tags are visible
+                                        return this.getLabelForValue(value);
+                                      }
+                                    },
+                                    grid: { display: false },
+                                    border: { display: true, color: 'rgba(0, 0, 0, 0.15)' }
                                   },
-                                  grid: {
-                                    display: false
+                                  y: {
+                                    display: true,
+                                    beginAtZero: true,
+                                    title: {
+                                      display: true,
+                                      text: 'Responses',
+                                      color: '#374151',
+                                      padding: { bottom: 8 },
+                                      font: { size: 12, weight: '600' }
+                                    },
+                                    ticks: {
+                                      color: '#374151',
+                                      font: { size: 12, weight: '500' },
+                                      padding: 8,
+                                      stepSize: 1,
+                                      callback: function(value) {
+                                        return Number.isInteger(value) ? value : '';
+                                      }
+                                    },
+                                    grid: {
+                                      display: true,
+                                      color: 'rgba(0, 0, 0, 0.08)',
+                                      drawBorder: false,
+                                      lineWidth: 1
+                                    },
+                                    border: { display: true, color: 'rgba(0, 0, 0, 0.15)' }
                                   }
                                 },
-                                y: {
-                                  beginAtZero: true,
-                                  suggestedMax: Math.max(...tagDistributions[question.QuestionID].map(tag => tag.TagCount)) * 1.1,
-                                  ticks: {
-                                    color: 'rgba(255, 255, 255, 0.95)',
-                                    font: {
-                                      size: 12,
-                                      weight: '500'
-                                    },
-                                    padding: 8,
-                                    stepSize: 1
-                                  },
-                                  grid: {
-                                    display: true,
-                                    color: 'rgba(0, 0, 0, 0.08)',
-                                    drawBorder: false,
-                                    lineWidth: 1
-                                  },
-                                  border: {
-                                    display: false
-                                  }
-                                }
-                              },
-                              animation: {
-                                duration: 750,
-                                easing: 'easeOutQuart'
-                              },
-                              barThickness: 'flex',
-                              maxBarThickness: 50
-                            }}
-                            style={{ height: '400px', marginBottom: '20px' }}
-                          />
-                        </div>
-                      )}
+                                animation: { duration: 750, easing: 'easeOutQuart' },
+                                barThickness: 'flex',
+                                maxBarThickness: 50
+                              }}
+                              style={{ height: '100%', marginBottom: '0' }}
+                            />
+                          </div>
+                        );
+                      })()}
                       {question.responses.map((response) => (
                         <div key={response.ResponseID} className="full-response-card">
                           <div className="response-header">
@@ -1146,15 +1196,53 @@ function App() {
                               />
                             </div>
                             <div className="response-tags">
-                              <div className="tags-list">
-                                {response.Tags && response.Tags.map((tag, tagIndex) => (
-                                  <span 
-                                    key={tagIndex} 
-                                    className={`tag-badge ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
-                                  >
-                                    {tag.TagName}
-                                  </span>
-                                ))}
+                              <div className="tags-list hierarchical">
+                                {response.Tags && (() => {
+                                  // Group tags by primary/sub for hierarchical display
+                                  const primaryTags = response.Tags.filter(tag => tag.TagLevel === 1);
+                                  const subTags = response.Tags.filter(tag => tag.TagLevel === 2);
+                                  
+                                  return (
+                                    <>
+                                      {/* Primary Tags */}
+                                      {primaryTags.map((tag, tagIndex) => (
+                                        <div key={`primary-${tagIndex}`} className="tag-group">
+                                          <span 
+                                            className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                          >
+                                            🏷️ {tag.TagName}
+                                          </span>
+                                          
+                                          {/* Sub-tags for this primary tag */}
+                                          {subTags
+                                            .filter(subTag => subTag.ParentTagID === tag.TagID)
+                                            .map((subTag, subIndex) => (
+                                              <span 
+                                                key={`sub-${subIndex}`}
+                                                className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''}`}
+                                              >
+                                                ↳ {subTag.TagName}
+                                              </span>
+                                            ))
+                                          }
+                                        </div>
+                                      ))}
+                                      
+                                      {/* Orphaned sub-tags (if any) */}
+                                      {subTags
+                                        .filter(subTag => !primaryTags.some(primary => primary.TagID === subTag.ParentTagID))
+                                        .map((tag, tagIndex) => (
+                                          <span 
+                                            key={`orphan-${tagIndex}`}
+                                            className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                          >
+                                            ↳ {tag.TagName} <small>(orphaned)</small>
+                                          </span>
+                                        ))
+                                      }
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>

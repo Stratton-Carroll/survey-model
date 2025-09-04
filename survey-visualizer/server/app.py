@@ -22,38 +22,45 @@ def get_tags():
         print(f"Database file exists: {os.path.exists(DATABASE_PATH)}")
         conn = get_db_connection()
         
-        # Get tags with effective response counts (including manual overrides)
+        # Get tags with effective response counts (3-layer system: Algorithmic -> Question -> Manual)
         query = """
-        WITH EffectiveResponseTags AS (
-            -- Original tags
-            SELECT bt.TagID, bt.ResponseID
-            FROM BridgeResponseTags bt
-            
-            UNION
-            
-            -- Manual additions
-            SELECT mto.TagID, f.ResponseID
-            FROM ManualTagOverrides mto
-            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                AND mto.QuestionID = f.QuestionID
-            WHERE mto.Action = 'ADD'
-            
-            EXCEPT
-            
-            -- Manual removals
-            SELECT mto.TagID, f.ResponseID
-            FROM ManualTagOverrides mto
-            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                AND mto.QuestionID = f.QuestionID
-            WHERE mto.Action = 'REMOVE'
+        WITH AllResponseTags AS (
+            -- All unique Response-Tag combinations from all layers
+            SELECT DISTINCT ResponseID, TagID FROM (
+                -- Layer 1: Original algorithmic tags
+                SELECT bt.ResponseID, bt.TagID FROM BridgeResponseTags bt
+                UNION ALL
+                -- Layer 2: Question-based mappings  
+                SELECT qtm.ResponseID, qtm.TagID FROM QuestionTagMappings qtm WHERE qtm.IsActive = 1
+                UNION ALL
+                -- Layer 3: Manual additions
+                SELECT mto.ResponseID, mto.TagID FROM ManualTagOverrides mto WHERE mto.Action = 'ADD' AND mto.IsActive = 1
+            )
+        ),
+        ManualRemovals AS (
+            -- Get manual removals to subtract
+            SELECT mto.ResponseID, mto.TagID 
+            FROM ManualTagOverrides mto 
+            WHERE mto.Action = 'REMOVE' AND mto.IsActive = 1
+        ),
+        EffectiveResponseTags AS (
+            -- Final effective tags (all additions minus removals)
+            SELECT art.ResponseID, art.TagID 
+            FROM AllResponseTags art
+            LEFT JOIN ManualRemovals mr ON art.ResponseID = mr.ResponseID AND art.TagID = mr.TagID
+            WHERE mr.TagID IS NULL
         )
         SELECT t.TagID, t.TagKey, t.TagName, t.TagCategory, t.TagPriority, 
-               t.TagDescription, t.IsActive, COUNT(ert.ResponseID) as ResponseCount 
+               t.TagDescription, t.IsActive, t.TagLevel, t.ParentTagID,
+               COUNT(DISTINCT ert.ResponseID) as ResponseCount,
+               CASE WHEN t.TagLevel = 1 THEN t.TagName 
+                    ELSE (SELECT p.TagName FROM DimTags p WHERE p.TagID = t.ParentTagID) 
+               END as PrimaryTagName
         FROM DimTags t 
         LEFT JOIN EffectiveResponseTags ert ON t.TagID = ert.TagID 
         WHERE t.IsActive = 1
-        GROUP BY t.TagID, t.TagKey, t.TagName, t.TagCategory, t.TagPriority, t.TagDescription, t.IsActive
-        ORDER BY ResponseCount DESC
+        GROUP BY t.TagID, t.TagKey, t.TagName, t.TagCategory, t.TagPriority, t.TagDescription, t.IsActive, t.TagLevel, t.ParentTagID
+        ORDER BY ResponseCount DESC, t.TagLevel, t.TagName
         """
         
         tags = conn.execute(query).fetchall()
@@ -68,43 +75,55 @@ def get_question_tag_distribution(question_id):
     try:
         conn = get_db_connection()
         query = """
-        WITH EffectiveResponseTags AS (
-            -- Original tags for this question
-            SELECT bt.TagID, bt.ResponseID
-            FROM BridgeResponseTags bt
-            JOIN FactSurveyResponses f ON bt.ResponseID = f.ResponseID
+        WITH AllQuestionResponseTags AS (
+            -- All Response-Tag combinations for this question from all layers
+            SELECT DISTINCT f.ResponseID, TagID FROM (
+                -- Layer 1: Original algorithmic tags
+                SELECT bt.ResponseID, bt.TagID FROM BridgeResponseTags bt
+                JOIN FactSurveyResponses f ON bt.ResponseID = f.ResponseID
+                WHERE f.QuestionID = ?
+                UNION ALL
+                -- Layer 2: Question-based mappings
+                SELECT qtm.ResponseID, qtm.TagID FROM QuestionTagMappings qtm
+                JOIN FactSurveyResponses f ON qtm.ResponseID = f.ResponseID  
+                WHERE f.QuestionID = ? AND qtm.IsActive = 1
+                UNION ALL
+                -- Layer 3: Manual additions
+                SELECT mto.ResponseID, mto.TagID FROM ManualTagOverrides mto
+                JOIN FactSurveyResponses f ON mto.ResponseID = f.ResponseID
+                WHERE f.QuestionID = ? AND mto.Action = 'ADD' AND mto.IsActive = 1
+            ) all_tags
+            JOIN FactSurveyResponses f ON all_tags.ResponseID = f.ResponseID
             WHERE f.QuestionID = ?
-            
-            UNION
-            
-            -- Manual additions for this question
-            SELECT mto.TagID, f.ResponseID
-            FROM ManualTagOverrides mto
-            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                AND mto.QuestionID = f.QuestionID
-            WHERE f.QuestionID = ? AND mto.Action = 'ADD'
-            
-            EXCEPT
-            
+        ),
+        ManualRemovals AS (
             -- Manual removals for this question
-            SELECT mto.TagID, f.ResponseID
+            SELECT mto.ResponseID, mto.TagID 
             FROM ManualTagOverrides mto
-            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                AND mto.QuestionID = f.QuestionID
-            WHERE f.QuestionID = ? AND mto.Action = 'REMOVE'
+            JOIN FactSurveyResponses f ON mto.ResponseID = f.ResponseID
+            WHERE f.QuestionID = ? AND mto.Action = 'REMOVE' AND mto.IsActive = 1
+        ),
+        EffectiveResponseTags AS (
+            -- Final effective tags (additions minus removals)
+            SELECT aqrt.ResponseID, aqrt.TagID 
+            FROM AllQuestionResponseTags aqrt
+            LEFT JOIN ManualRemovals mr ON aqrt.ResponseID = mr.ResponseID AND aqrt.TagID = mr.TagID
+            WHERE mr.TagID IS NULL
         )
         SELECT 
             dt.TagID,
             dt.TagName,
             dt.TagCategory,
+            dt.TagLevel,
+            dt.ParentTagID,
             COUNT(DISTINCT ert.ResponseID) as TagCount
         FROM EffectiveResponseTags ert
         JOIN DimTags dt ON ert.TagID = dt.TagID
         WHERE dt.IsActive = 1
-        GROUP BY dt.TagID, dt.TagName, dt.TagCategory
-        ORDER BY TagCount DESC
+        GROUP BY dt.TagID, dt.TagName, dt.TagCategory, dt.TagLevel, dt.ParentTagID
+        ORDER BY TagCount DESC, dt.TagLevel, dt.TagName
         """
-        tag_distribution = conn.execute(query, (question_id, question_id, question_id)).fetchall()
+        tag_distribution = conn.execute(query, (question_id, question_id, question_id, question_id, question_id)).fetchall()
         conn.close()
         return jsonify([dict(item) for item in tag_distribution])
     except Exception as e:
@@ -221,37 +240,63 @@ def get_responses_with_tags():
                     'responses': []
                 }
             
-            # Get effective tags for this response using the same logic as the dedicated endpoint
+            # Get effective tags using 3-layer priority system: Algorithmic -> Question Mappings -> Manual Overrides
             effective_tags_query = """
-            WITH EffectiveTags AS (
-                -- Original tags
-                SELECT bt.TagID
+            WITH LatestManualOverrides AS (
+                -- Get the latest manual override action for each tag
+                SELECT 
+                    mto.TagID,
+                    mto.Action,
+                    ROW_NUMBER() OVER (PARTITION BY mto.TagID ORDER BY mto.AppliedDate DESC) as rn
+                FROM ManualTagOverrides mto
+                WHERE mto.ResponseID = ? AND mto.IsActive = 1
+            ),
+            AllTagSources AS (
+                -- Layer 1: Original algorithmic tags (not manually removed)
+                SELECT bt.TagID, 'algorithmic' as Source, 0 as Priority
                 FROM BridgeResponseTags bt
-                WHERE bt.ResponseID = ?
+                LEFT JOIN LatestManualOverrides lmo ON bt.TagID = lmo.TagID AND lmo.rn = 1
+                WHERE bt.ResponseID = ? AND (lmo.Action IS NULL OR lmo.Action != 'REMOVE')
                 
-                UNION
+                UNION ALL
                 
-                -- Manual additions
-                SELECT mto.TagID
-                FROM ManualTagOverrides mto
-                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                    AND mto.QuestionID = f.QuestionID
-                WHERE f.ResponseID = ? AND mto.Action = 'ADD'
+                -- Layer 2: Question-based tag mappings (not manually removed)
+                SELECT qtm.TagID, 'question-mapping' as Source, 1 as Priority
+                FROM QuestionTagMappings qtm
+                LEFT JOIN LatestManualOverrides lmo ON qtm.TagID = lmo.TagID AND lmo.rn = 1
+                WHERE qtm.ResponseID = ? AND qtm.IsActive = 1 
+                      AND (lmo.Action IS NULL OR lmo.Action != 'REMOVE')
                 
-                EXCEPT
+                UNION ALL
                 
-                -- Manual removals
-                SELECT mto.TagID
-                FROM ManualTagOverrides mto
-                JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
-                    AND mto.QuestionID = f.QuestionID
-                WHERE f.ResponseID = ? AND mto.Action = 'REMOVE'
+                -- Layer 3: Manual additions (highest priority)
+                SELECT lmo.TagID, 'manual' as Source, 2 as Priority
+                FROM LatestManualOverrides lmo
+                WHERE lmo.rn = 1 AND lmo.Action = 'ADD'
+            ),
+            EffectiveTags AS (
+                -- Get highest priority source for each tag
+                SELECT 
+                    TagID,
+                    Source,
+                    ROW_NUMBER() OVER (PARTITION BY TagID ORDER BY Priority DESC) as rn
+                FROM AllTagSources
             )
-            SELECT DISTINCT et.TagID, t.TagName, t.TagCategory
+            SELECT DISTINCT 
+                et.TagID, 
+                t.TagName, 
+                t.TagCategory, 
+                t.TagLevel,
+                t.ParentTagID,
+                et.Source,
+                CASE WHEN et.Source = 'manual' THEN 1 ELSE 0 END as IsManuallyAdded,
+                CASE WHEN t.TagLevel = 1 THEN t.TagName 
+                     ELSE (SELECT p.TagName FROM DimTags p WHERE p.TagID = t.ParentTagID) 
+                END as PrimaryTagName
             FROM EffectiveTags et
             JOIN DimTags t ON et.TagID = t.TagID
-            WHERE t.IsActive = 1
-            ORDER BY t.TagName
+            WHERE t.IsActive = 1 AND et.rn = 1
+            ORDER BY t.TagLevel, t.TagName
             """
             tags_result = conn.execute(effective_tags_query, (response['ResponseID'], response['ResponseID'], response['ResponseID'])).fetchall()
             tags = [dict(tag) for tag in tags_result]
@@ -612,11 +657,12 @@ def modify_response_tags(response_id):
         from datetime import datetime
         override_query = """
         INSERT OR REPLACE INTO ManualTagOverrides 
-        (SurveyResponseNumber, QuestionID, TagID, Action, AppliedBy, AppliedDate, Notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (ResponseID, SurveyResponseNumber, QuestionID, TagID, Action, AppliedBy, AppliedDate, Notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         conn.execute(override_query, (
+            response_id,
             response_info['SurveyResponseNumber'],
             response_info['QuestionID'],
             tag_id,
@@ -635,23 +681,121 @@ def modify_response_tags(response_id):
         print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/tags/available', methods=['GET'])
-def get_available_tags():
-    """Get all available tags for the tag editor"""
+@app.route('/api/responses/<int:response_id>/effective-tags', methods=['GET'])
+def get_response_effective_tags(response_id):
+    """Get effective tags for a specific response with hierarchy and source information"""
     try:
         conn = get_db_connection()
         
+        # Same deduplication logic as main responses endpoint
+        effective_tags_query = """
+        WITH LatestManualOverrides AS (
+            -- Get the latest manual override action for each tag
+            SELECT 
+                mto.TagID,
+                mto.Action,
+                ROW_NUMBER() OVER (PARTITION BY mto.TagID ORDER BY mto.AppliedDate DESC) as rn
+            FROM ManualTagOverrides mto
+            WHERE mto.ResponseID = ? AND mto.IsActive = 1
+        ),
+        AllTagSources AS (
+            -- Layer 1: Original algorithmic tags (not manually removed)
+            SELECT bt.TagID, 'algorithmic' as Source, 0 as Priority
+            FROM BridgeResponseTags bt
+            LEFT JOIN LatestManualOverrides lmo ON bt.TagID = lmo.TagID AND lmo.rn = 1
+            WHERE bt.ResponseID = ? AND (lmo.Action IS NULL OR lmo.Action != 'REMOVE')
+            
+            UNION ALL
+            
+            -- Layer 2: Question-based tag mappings (not manually removed)
+            SELECT qtm.TagID, 'question-mapping' as Source, 1 as Priority
+            FROM QuestionTagMappings qtm
+            LEFT JOIN LatestManualOverrides lmo ON qtm.TagID = lmo.TagID AND lmo.rn = 1
+            WHERE qtm.ResponseID = ? AND qtm.IsActive = 1 
+                  AND (lmo.Action IS NULL OR lmo.Action != 'REMOVE')
+            
+            UNION ALL
+            
+            -- Layer 3: Manual additions (highest priority)
+            SELECT lmo.TagID, 'manual' as Source, 2 as Priority
+            FROM LatestManualOverrides lmo
+            WHERE lmo.rn = 1 AND lmo.Action = 'ADD'
+        ),
+        EffectiveTags AS (
+            -- Get highest priority source for each tag
+            SELECT 
+                TagID,
+                Source,
+                ROW_NUMBER() OVER (PARTITION BY TagID ORDER BY Priority DESC) as rn
+            FROM AllTagSources
+        )
+        SELECT DISTINCT 
+            et.TagID, 
+            t.TagName, 
+            t.TagCategory, 
+            t.TagLevel,
+            t.ParentTagID,
+            et.Source,
+            CASE WHEN et.Source = 'manual' THEN 1 ELSE 0 END as IsManuallyAdded,
+            CASE WHEN t.TagLevel = 1 THEN t.TagName 
+                 ELSE (SELECT p.TagName FROM DimTags p WHERE p.TagID = t.ParentTagID) 
+            END as PrimaryTagName
+        FROM EffectiveTags et
+        JOIN DimTags t ON et.TagID = t.TagID
+        WHERE t.IsActive = 1 AND et.rn = 1
+        ORDER BY t.TagLevel, t.TagName
+        """
+        
+        tags_result = conn.execute(effective_tags_query, (response_id, response_id, response_id)).fetchall()
+        tags = [dict(tag) for tag in tags_result]
+        
+        conn.close()
+        return jsonify(tags)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/tags/available', methods=['GET'])
+def get_available_tags():
+    """Get all available tags for the tag editor - returns hierarchical structure"""
+    try:
+        conn = get_db_connection()
+        
+        # Get all tags with hierarchy information
         query = """
-        SELECT TagID, TagName, TagCategory, TagDescription
+        SELECT 
+            TagID, 
+            TagName, 
+            TagCategory, 
+            TagDescription, 
+            TagLevel, 
+            ParentTagID,
+            0 as ResponseCount
         FROM DimTags 
         WHERE IsActive = 1
-        ORDER BY TagCategory, TagName
+        ORDER BY TagLevel, TagCategory, TagName
         """
         
         tags = conn.execute(query).fetchall()
         conn.close()
         
-        return jsonify([dict(tag) for tag in tags])
+        # Build hierarchical structure
+        primary_tags = []
+        sub_tags_map = {}
+        
+        for tag in tags:
+            tag_dict = dict(tag)
+            if tag['TagLevel'] == 1:  # Primary tag
+                tag_dict['SubTags'] = []
+                primary_tags.append(tag_dict)
+                sub_tags_map[tag['TagID']] = tag_dict['SubTags']
+            else:  # Sub tag
+                parent_id = tag['ParentTagID']
+                if parent_id in sub_tags_map:
+                    sub_tags_map[parent_id].append(tag_dict)
+        
+        return jsonify(primary_tags)
         
     except Exception as e:
         print(f"Error: {e}")

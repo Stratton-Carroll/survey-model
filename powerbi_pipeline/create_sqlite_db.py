@@ -12,11 +12,17 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 
 from config import OUTPUT_DIR
+from backup_manual_overrides import backup_manual_overrides, restore_manual_overrides
+from import_hierarchical_tags import import_tag_hierarchy, import_question_tag_mappings
 
 def create_survey_database():
     """Create SQLite database from CSV files"""
     
     db_path = os.path.join(OUTPUT_DIR, 'survey_analysis.db')
+    
+    # Backup manual overrides before removing database
+    print("💾 Backing up manual tag overrides...")
+    backup_manual_overrides()
     
     # Remove existing database
     if os.path.exists(db_path):
@@ -58,9 +64,23 @@ def create_survey_database():
         # Create some indexes for better performance
         create_indexes(conn)
         
+        # Create ManualTagOverrides table
+        create_manual_overrides_table(conn)
+        
         conn.commit()
         print(f"🎉 Database created successfully!")
         print(f"📍 Location: {db_path}")
+        
+        # Restore manual overrides from backup
+        conn.close()
+        print("🔄 Restoring manual tag overrides from backup...")
+        restore_manual_overrides()
+        
+        # Import hierarchical tags and question mappings
+        print("🌳 Importing hierarchical tags...")
+        import_tag_hierarchy()
+        print("📊 Importing question-tag mappings...")
+        import_question_tag_mappings()
         
         return db_path
         
@@ -184,6 +204,32 @@ def create_indexes(conn):
             print(f"⚠️ Index creation warning: {str(e)}")
     
     print("🔍 Created performance indexes")
+
+def create_manual_overrides_table(conn):
+    """Create ManualTagOverrides table for manual tag modifications"""
+    
+    create_table_sql = """
+    CREATE TABLE ManualTagOverrides (
+        OverrideID INTEGER PRIMARY KEY AUTOINCREMENT,
+        SurveyResponseNumber INTEGER NOT NULL,
+        QuestionID INTEGER NOT NULL,
+        TagID INTEGER NOT NULL,
+        Action TEXT CHECK(Action IN ('ADD', 'REMOVE')) NOT NULL,
+        AppliedBy TEXT NOT NULL,
+        AppliedDate TEXT NOT NULL,
+        Notes TEXT,
+        IsActive INTEGER DEFAULT 1,
+        FOREIGN KEY (TagID) REFERENCES DimTags(TagID)
+    )
+    """
+    
+    try:
+        conn.execute(create_table_sql)
+        conn.execute("CREATE INDEX idx_manual_overrides_response ON ManualTagOverrides(SurveyResponseNumber, QuestionID)")
+        conn.execute("CREATE INDEX idx_manual_overrides_tag ON ManualTagOverrides(TagID)")
+        print("🏷️ Created ManualTagOverrides table")
+    except Exception as e:
+        print(f"⚠️ Error creating ManualTagOverrides table: {str(e)}")
 
 def run_sample_queries(db_path):
     """Run some sample queries to demonstrate functionality"""

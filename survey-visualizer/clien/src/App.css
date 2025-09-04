@@ -752,16 +752,33 @@
 /* Modern styling for the tag distribution chart */
 .tag-distribution-chart {
   background: white;
-  padding: 1.5rem 2rem 2.5rem;
+  padding: 1.25rem 1.5rem 3.5rem;
   border-radius: 16px;
   margin: 0.5rem 0 2rem 0;
-  min-height: 400px;
+  /* Responsive height: fill available space sensibly */
+  height: clamp(400px, 50vh, 640px);
   box-shadow: var(--shadow-lg);
   border: 1px solid rgba(255, 255, 255, 0.2);
+  width: 100%;
+  overflow: hidden;
 }
 
 .tag-distribution-chart:hover {
   box-shadow: var(--shadow-lg);
+}
+
+/* Responsive improvements for chart */
+@media (max-width: 768px) {
+  .tag-distribution-chart {
+    padding: 1rem;
+    margin: 0.5rem 0 1.5rem 0;
+    height: clamp(300px, 45vh, 480px);
+  }
+
+  .question-responses {
+    padding: 1rem;
+    gap: 1.5rem;
+  }
 }
 
 /* Modern card styling */
@@ -1249,11 +1266,15 @@ body {
 .question-responses {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 2rem;
   animation: fadeIn 0.3s ease-out;
   margin-top: 1.5rem;
-  padding-top: 1rem;
+  padding: 2rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 0 0 16px 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .full-response-card {
@@ -1920,4 +1941,131 @@ body {
     height: 2.5rem;
     font-size: 1rem;
   }
+}
+/* Hierarchical Tag Display Styles */
+.tags-list.hierarchical {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tag-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-right: 12px;
+}
+
+/* Primary Tag Badges */
+.tag-badge.primary {
+  background: linear-gradient(135deg, #7a9944, #8c4c8c);
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 2px solid transparent;
+  position: relative;
+}
+
+/* Sub-tag Badges */
+.tag-badge.sub {
+  background: rgba(122, 153, 68, 0.15);
+  color: #5a7034;
+  font-weight: 500;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(122, 153, 68, 0.3);
+  margin-left: 16px;
+  position: relative;
+}
+
+.tag-badge.sub::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: rgba(122, 153, 68, 0.4);
+  transform: translateY(-50%);
+}
+
+/* Orphaned sub-tags */
+.tag-badge.sub.orphan {
+  background: rgba(220, 38, 127, 0.15);
+  color: #8b1538;
+  border-color: rgba(220, 38, 127, 0.3);
+}
+
+.tag-badge.sub.orphan small {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+/* Category-specific colors for primary tags */
+.tag-badge.primary.clinical {
+  background: linear-gradient(135deg, #e11d48, #f472b6);
+}
+
+.tag-badge.primary.financial {
+  background: linear-gradient(135deg, #059669, #34d399);
+}
+
+.tag-badge.primary.wellness {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+}
+
+.tag-badge.primary.support {
+  background: linear-gradient(135deg, #dc2626, #f87171);
+}
+
+.tag-badge.primary.professional {
+  background: linear-gradient(135deg, #0891b2, #67e8f9);
+}
+
+.tag-badge.primary.workforce {
+  background: linear-gradient(135deg, #ea580c, #fdba74);
+}
+
+/* Corresponding sub-tag colors */
+.tag-badge.sub.clinical {
+  background: rgba(225, 29, 72, 0.15);
+  color: #881337;
+  border-color: rgba(225, 29, 72, 0.3);
+}
+
+.tag-badge.sub.financial {
+  background: rgba(5, 150, 105, 0.15);
+  color: #064e3b;
+  border-color: rgba(5, 150, 105, 0.3);
+}
+
+.tag-badge.sub.wellness {
+  background: rgba(124, 58, 237, 0.15);
+  color: #581c87;
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
+.tag-badge.sub.support {
+  background: rgba(220, 38, 38, 0.15);
+  color: #7f1d1d;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.tag-badge.sub.professional {
+  background: rgba(8, 145, 178, 0.15);
+  color: #164e63;
+  border-color: rgba(8, 145, 178, 0.3);
+}
+
+.tag-badge.sub.workforce {
+  background: rgba(234, 88, 12, 0.15);
+  color: #9a3412;
+  border-color: rgba(234, 88, 12, 0.3);
 }
