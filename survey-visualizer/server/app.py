@@ -70,6 +70,194 @@ def get_tags():
         print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/analytics/sankey', methods=['GET'])
+def get_sankey_data():
+    """Generate Sankey diagram data from effective tags.
+
+    - Select top 10 primary tags (TagLevel=1) by effective response count.
+    - For each primary, include top N sub-tags (TagLevel=2, same parent) by count.
+    - If the primary has no sub-tags (or remainder), add an 'Other' bucket so every
+      primary has at least one outgoing link. This ensures ranks #1..#10 always show.
+    """
+    try:
+        conn = get_db_connection()
+
+        # Build effective tags set (original + question mappings + manual adds - removals)
+        effective_cte = """
+        WITH AllResponseTags AS (
+            SELECT DISTINCT ResponseID, TagID FROM (
+                SELECT bt.ResponseID, bt.TagID FROM BridgeResponseTags bt
+                UNION ALL
+                SELECT qtm.ResponseID, qtm.TagID FROM QuestionTagMappings qtm WHERE qtm.IsActive = 1
+                UNION ALL
+                SELECT mto.ResponseID, mto.TagID FROM ManualTagOverrides mto WHERE mto.Action = 'ADD' AND mto.IsActive = 1
+            )
+        ),
+        ManualRemovals AS (
+            SELECT mto.ResponseID, mto.TagID 
+            FROM ManualTagOverrides mto 
+            WHERE mto.Action = 'REMOVE' AND mto.IsActive = 1
+        ),
+        EffectiveResponseTags AS (
+            SELECT art.ResponseID, art.TagID 
+            FROM AllResponseTags art
+            LEFT JOIN ManualRemovals mr ON art.ResponseID = mr.ResponseID AND art.TagID = mr.TagID
+            WHERE mr.TagID IS NULL
+        )
+        """
+
+        # Top 5 primary tags by effective response count (clean focus)
+        primary_query = f"""
+        {effective_cte}
+        SELECT dt.TagID, dt.TagName, dt.TagCategory,
+               COUNT(DISTINCT ert.ResponseID) AS ResponseCount
+        FROM DimTags dt
+        LEFT JOIN EffectiveResponseTags ert ON dt.TagID = ert.TagID
+        WHERE dt.IsActive = 1 AND dt.TagLevel = 1
+        GROUP BY dt.TagID, dt.TagName, dt.TagCategory
+        ORDER BY ResponseCount DESC
+        LIMIT 5
+        """
+        prim_rows = conn.execute(primary_query).fetchall()
+        primaries = [dict(r) for r in prim_rows]
+
+        if not primaries:
+            conn.close()
+            return jsonify({
+                'nodes': {'labels': [], 'colors': [], 'hovers': []},
+                'links': {'source': [], 'target': [], 'value': [], 'colors': [], 'hovers': []}
+            })
+
+        primary_ids = [p['TagID'] for p in primaries]
+
+        # Sub-tag counts for those primaries
+        placeholders = ','.join(['?'] * len(primary_ids))
+        sub_query = f"""
+        {effective_cte}
+        SELECT dt.ParentTagID AS PrimaryTagID,
+               dt.TagID,
+               dt.TagName,
+               COUNT(DISTINCT ert.ResponseID) AS ResponseCount
+        FROM DimTags dt
+        LEFT JOIN EffectiveResponseTags ert ON dt.TagID = ert.TagID
+        WHERE dt.IsActive = 1 AND dt.TagLevel = 2 AND dt.ParentTagID IN ({placeholders})
+        GROUP BY dt.ParentTagID, dt.TagID, dt.TagName
+        ORDER BY dt.ParentTagID, ResponseCount DESC
+        """
+        sub_rows = conn.execute(sub_query, primary_ids).fetchall()
+        conn.close()
+
+        # Organize sub-tags by parent
+        subs_by_parent = {}
+        for r in sub_rows:
+            d = dict(r)
+            subs_by_parent.setdefault(d['PrimaryTagID'], []).append(d)
+
+        # Theme-consistent color palette for 10 ranks
+        primary_palette = ['#7a9944', '#ea580c', '#0891b2', '#059669', '#7c3aed',
+                           '#dc2626', '#f59e0b', '#8b5cf6', '#06b6d4', '#64748b']
+
+        def hex_to_rgba(hex_color, alpha):
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            return f"rgba({r}, {g}, {b}, {alpha})"
+
+        # Build nodes and links
+        labels = []
+        node_colors = []
+        node_hovers = []
+        node_x = []
+        node_y = []
+        links_source = []
+        links_target = []
+        links_value = []
+        link_colors = []
+        link_hovers = []
+
+        node_index = {}
+        next_index = 0
+
+        # Add primaries with rank-based labels (use circled numerals for clarity)
+        circled = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩']
+        for rank, p in enumerate(primaries, start=1):
+            label = f"{circled[rank-1]} {p['TagName']}"
+            color = primary_palette[(rank - 1) % len(primary_palette)]
+            hover = f"{p['TagName']} — {p['ResponseCount']} mentions"
+            node_index[p['TagID']] = next_index
+            labels.append(label)
+            node_colors.append(color)
+            node_hovers.append(hover)
+            node_x.append(0.03)
+            # Even vertical spacing for left nodes with margins
+            if len(primaries) > 1:
+                y_val = 0.06 + (rank - 1) * (0.88 / (len(primaries) - 1))
+            else:
+                y_val = 0.5
+            node_y.append(y_val)
+            next_index += 1
+
+        # For each primary, add top sub-tags (max 5). No 'Other' bucket.
+        # First select the sub-tags we plan to render so we can space them globally.
+        MAX_SUBS = 5
+        chosen_by_parent = []  # list of tuples (p_rank, p_dict, p_idx, p_color, [sub_dicts])
+        for rank, p in enumerate(primaries, start=1):
+            p_id = p['TagID']
+            p_idx = node_index[p_id]
+            p_color = primary_palette[(rank - 1) % len(primary_palette)]
+            subs = subs_by_parent.get(p_id, [])
+            chosen = subs[:MAX_SUBS]
+            chosen_by_parent.append((rank, p, p_idx, p_color, chosen))
+
+        # Compute global vertical positions for all right-side nodes to prevent overlap
+        total_right = sum(len(item[4]) for item in chosen_by_parent)
+        def y_for_right(i, N):
+            if N <= 1:
+                return 0.5
+            # Use 0.04..0.96 to give label breathing room at edges
+            return 0.04 + i * (0.92 / (N - 1))
+
+        right_counter = 0
+        for rank, p, p_idx, p_color, chosen in chosen_by_parent:
+            for s in chosen:
+                s_idx = next_index
+                next_index += 1
+                labels.append(s['TagName'])
+                node_colors.append(hex_to_rgba(p_color, 0.72))
+                node_hovers.append(f"{s['TagName']} — {s['ResponseCount']} mentions")
+                node_x.append(0.92)
+                y_val = y_for_right(right_counter, total_right)
+                node_y.append(y_val)
+                links_source.append(p_idx)
+                links_target.append(s_idx)
+                links_value.append(int(s['ResponseCount'] or 0))
+                link_colors.append(hex_to_rgba(p_color, 0.32))
+                link_hovers.append(f"{p['TagName']} → {s['TagName']}: {int(s['ResponseCount'] or 0)}")
+                right_counter += 1
+
+        return jsonify({
+            'nodes': {
+                'labels': labels,
+                'colors': node_colors,
+                'hovers': node_hovers,
+                'x': node_x,
+                'y': node_y,
+                'leftCount': len(primaries),
+                'rightCount': total_right
+            },
+            'links': {
+                'source': links_source,
+                'target': links_target,
+                'value': links_value,
+                'colors': link_colors,
+                'hovers': link_hovers
+            }
+        })
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/questions/<int:question_id>/tag-distribution', methods=['GET'])
 def get_question_tag_distribution(question_id):
     try:
@@ -325,30 +513,45 @@ def get_analytics():
         conn = get_db_connection()
         analytics_data = {}
         
-        # Overview metrics
+        # Overview metrics (dynamic counts)
         overview_query = """
         SELECT 
-            COUNT(*) as total_responses,
-            COUNT(DISTINCT SurveyResponseNumber) as unique_respondents,
-            AVG(CAST(ResponseRate AS REAL)) as avg_response_rate,
-            AVG(CASE WHEN HasResponse = 1 THEN WordCount END) as avg_word_count,
-            AVG(CASE WHEN HasResponse = 1 THEN ResponseLength END) as avg_response_length
+            COUNT(CASE WHEN f.HasResponse = 1 THEN 1 END) as total_responses,
+            COUNT(DISTINCT f.SurveyResponseNumber) as unique_respondents,
+            (SELECT COUNT(*) FROM DimQuestion) as total_questions,
+            COUNT(DISTINCT CASE WHEN f.OrganizationID IS NOT NULL THEN f.OrganizationID END) as organizations,
+            AVG(CAST(q.ResponseRate AS REAL)) as avg_response_rate,
+            AVG(CASE WHEN f.HasResponse = 1 THEN f.WordCount END) as avg_word_count,
+            AVG(CASE WHEN f.HasResponse = 1 THEN f.ResponseLength END) as avg_response_length
         FROM FactSurveyResponses f
         LEFT JOIN DimQuestion q ON f.QuestionID = q.QuestionID
         """
         overview = conn.execute(overview_query).fetchone()
         analytics_data['overview'] = dict(overview)
         
-        # Role category analysis
+        # Role category analysis (existing)
         role_category_query = """
         SELECT r.RoleCategory, COUNT(*) as response_count
         FROM FactSurveyResponses f
         JOIN DimRole r ON f.RoleID = r.RoleID
+        WHERE f.HasResponse = 1
         GROUP BY r.RoleCategory
         ORDER BY response_count DESC
         """
         role_categories = conn.execute(role_category_query).fetchall()
         analytics_data['role_category_analysis'] = [dict(row) for row in role_categories]
+
+        # Role type analysis (new)
+        role_type_query = """
+        SELECT r.RoleType, COUNT(*) as response_count
+        FROM FactSurveyResponses f
+        JOIN DimRole r ON f.RoleID = r.RoleID
+        WHERE f.HasResponse = 1
+        GROUP BY r.RoleType
+        ORDER BY response_count DESC
+        """
+        role_types = conn.execute(role_type_query).fetchall()
+        analytics_data['role_type_analysis'] = [dict(row) for row in role_types]
         
         # Tag category analysis
         tag_category_query = """
@@ -424,7 +627,7 @@ def get_analytics():
         SELECT t.TagID, t.TagName, t.TagDescription, t.TagCategory, COUNT(ert.ResponseID) as ResponseCount
         FROM DimTags t
         LEFT JOIN EffectiveResponseTags ert ON t.TagID = ert.TagID
-        WHERE t.IsActive = 1
+        WHERE t.IsActive = 1 AND t.TagLevel = 1
         GROUP BY t.TagID, t.TagName, t.TagDescription, t.TagCategory
         ORDER BY ResponseCount DESC
         LIMIT 10
@@ -483,6 +686,56 @@ def get_analytics():
             })
         
         analytics_data['filtered_tag_analysis'] = filtered_tag_analysis
+
+        # Filtered tag analysis by role type (new)
+        filtered_tag_role_type_query = """
+        WITH EffectiveResponseTags AS (
+            -- Original tags
+            SELECT bt.TagID, bt.ResponseID
+            FROM BridgeResponseTags bt
+            
+            UNION
+            
+            -- Manual additions
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'ADD'
+            
+            EXCEPT
+            
+            -- Manual removals
+            SELECT mto.TagID, f.ResponseID
+            FROM ManualTagOverrides mto
+            JOIN FactSurveyResponses f ON mto.SurveyResponseNumber = f.SurveyResponseNumber 
+                AND mto.QuestionID = f.QuestionID
+            WHERE mto.Action = 'REMOVE'
+        )
+        SELECT 
+            r.RoleType,
+            t.TagName,
+            COUNT(ert.ResponseID) as ResponseCount
+        FROM FactSurveyResponses f
+        JOIN DimRole r ON f.RoleID = r.RoleID
+        JOIN EffectiveResponseTags ert ON f.ResponseID = ert.ResponseID
+        JOIN DimTags t ON ert.TagID = t.TagID
+        WHERE t.IsActive = 1
+        GROUP BY r.RoleType, t.TagName
+        ORDER BY r.RoleType, ResponseCount DESC
+        """
+        filtered_tags_rt = conn.execute(filtered_tag_role_type_query).fetchall()
+
+        filtered_tag_by_role_type = {}
+        for row in filtered_tags_rt:
+            role_type = row['RoleType']
+            if role_type not in filtered_tag_by_role_type:
+                filtered_tag_by_role_type[role_type] = []
+            filtered_tag_by_role_type[role_type].append({
+                'TagName': row['TagName'],
+                'ResponseCount': row['ResponseCount']
+            })
+        analytics_data['filtered_tag_by_role_type'] = filtered_tag_by_role_type
         
         # Tag-Role distribution analysis using effective tags (reverse of filtered_tag_analysis)
         tag_role_query = """

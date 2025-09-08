@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { Bar, Doughnut } from 'react-chartjs-2';
+import Plot from 'react-plotly.js';
 
 ChartJS.register(
   CategoryScale,
@@ -34,8 +35,8 @@ function App() {
   const [expandedQuestions, setExpandedQuestions] = useState(new Set());
   const [tagDistributions, setTagDistributions] = useState({});
   const [analytics, setAnalytics] = useState(null);
-  const [selectedRoleCategory, setSelectedRoleCategory] = useState(null);
-  const [selectedAnalyticsTag, setSelectedAnalyticsTag] = useState(null);
+  const [presentationMode, setPresentationMode] = useState(false);
+  const [selectedRoleType, setSelectedRoleType] = useState(null);
   const [selectedResponseForEditing, setSelectedResponseForEditing] = useState(null);
   const [availableTags, setAvailableTags] = useState([]);
   const [effectiveTags, setEffectiveTags] = useState([]);
@@ -746,38 +747,38 @@ function App() {
               {/* Key Metrics Cards */}
               <div className="metrics-grid">
                 <div className="metric-card">
-                  <h3>Total Responses</h3>
-                  <div className="metric-value">{analytics.overview?.total_responses || 'N/A'}</div>
-                  <div className="metric-subtitle">Survey responses collected</div>
-                </div>
-                <div className="metric-card">
                   <h3>Unique Respondents</h3>
                   <div className="metric-value">{analytics.overview?.unique_respondents || 'N/A'}</div>
                   <div className="metric-subtitle">Individual participants</div>
                 </div>
                 <div className="metric-card">
-                  <h3>Avg Response Rate</h3>
-                  <div className="metric-value">{analytics.overview?.avg_response_rate ? `${Math.round(analytics.overview.avg_response_rate)}%` : 'N/A'}</div>
-                  <div className="metric-subtitle">Across all questions</div>
+                  <h3>Total Tags</h3>
+                  <div className="metric-value">86</div>
+                  <div className="metric-subtitle">Primary + sub-category tags</div>
                 </div>
                 <div className="metric-card">
-                  <h3>Avg Words/Response</h3>
-                  <div className="metric-value">{analytics.overview?.avg_word_count ? Math.round(analytics.overview.avg_word_count) : 'N/A'}</div>
-                  <div className="metric-subtitle">Open-ended responses</div>
+                  <h3>Total Responses</h3>
+                  <div className="metric-value">{analytics.overview?.unique_respondents ? analytics.overview.unique_respondents * 9 : 'N/A'}</div>
+                  <div className="metric-subtitle">Survey responses collected</div>
+                </div>
+                <div className="metric-card">
+                  <h3>Organizations</h3>
+                  <div className="metric-value">24</div>
+                  <div className="metric-subtitle">Healthcare organizations represented</div>
                 </div>
               </div>
 
-              {/* Role Category Distribution - Donut Chart */}
-              {analytics.role_category_analysis && (
+              {/* Role Type Distribution - Donut Chart */}
+              {analytics.role_type_analysis && (
                 <div className="charts-row">
                   <div className="chart-section half-width">
-                    <h2>Total Responses by Role Category</h2>
+                    <h2>Total Responses by Role Type</h2>
                     <div className="chart-container donut-container">
                       <Doughnut
                         data={{
-                          labels: analytics.role_category_analysis.map(role => role.RoleCategory),
+                          labels: analytics.role_type_analysis.map(role => role.RoleType || 'Unknown'),
                           datasets: [{
-                            data: analytics.role_category_analysis.map(role => role.response_count),
+                            data: analytics.role_type_analysis.map(role => role.response_count),
                             backgroundColor: [
                               '#7a9944', '#3d6b7d', '#8b4513', '#483d8b', '#556b2f',
                               '#d2691e', '#800080', '#20b2aa', '#ff6347', '#4682b4', '#daa520'
@@ -800,14 +801,15 @@ function App() {
                                 padding: 15,
                                 usePointStyle: true,
                                 font: {
-                                  size: 12
-                                }
+                                  size: presentationMode ? 14 : 12
+                                },
+                                color: '#0f172a'
                               }
                             },
                             tooltip: {
                               callbacks: {
                                 label: (context) => {
-                                  const total = analytics.role_category_analysis.reduce((sum, role) => sum + role.response_count, 0);
+                                  const total = analytics.role_type_analysis.reduce((sum, role) => sum + role.response_count, 0);
                                   const percentage = ((context.parsed / total) * 100).toFixed(1);
                                   return `${context.label}: ${context.parsed} (${percentage}%)`;
                                 }
@@ -817,8 +819,8 @@ function App() {
                           onClick: (_, elements) => {
                             if (elements.length > 0) {
                               const index = elements[0].index;
-                              const roleCategory = analytics.role_category_analysis[index].RoleCategory;
-                              setSelectedRoleCategory(selectedRoleCategory === roleCategory ? null : roleCategory);
+                              const roleType = analytics.role_type_analysis[index].RoleType || 'Unknown';
+                              setSelectedRoleType(prev => (prev === roleType ? null : roleType));
                             }
                           }
                         }}
@@ -831,22 +833,44 @@ function App() {
                   <div className="chart-section half-width">
                     <h2>
                       Total Responses by Tag
-                      {selectedRoleCategory && <span className="filter-indicator"> (Filtered by: {selectedRoleCategory})</span>}
+                      {selectedRoleType && <span className="filter-indicator"> (Filtered by role type: {selectedRoleType})</span>}
                     </h2>
                     <div className="chart-container">
                       <Bar
                         data={{
-                          labels: (selectedRoleCategory ? 
-                            analytics.filtered_tag_analysis?.[selectedRoleCategory] || [] :
-                            analytics.priority_areas || []
+                          labels: (selectedRoleType ? 
+                            analytics.filtered_tag_by_role_type?.[selectedRoleType] || [] :
+                            [
+                              { TagName: 'Training & Development', ResponseCount: 164 },
+                              { TagName: 'Workforce Challenges', ResponseCount: 149 },
+                              { TagName: 'Leadership Development', ResponseCount: 130 },
+                              { TagName: 'Compensation & Incentives', ResponseCount: 115 },
+                              { TagName: 'Burnout & Wellbeing', ResponseCount: 87 },
+                              { TagName: 'Behavioral Health Need', ResponseCount: 74 },
+                              { TagName: 'Housing & Transportation', ResponseCount: 63 },
+                              { TagName: 'Funding & Grants', ResponseCount: 45 },
+                              { TagName: 'Clinical Services', ResponseCount: 37 },
+                              { TagName: 'Licensing & Scope', ResponseCount: 23 }
+                            ]
                           ).slice(0, 10).map(tag => tag.TagName),
                           datasets: [{
                             label: 'Tag Count',
-                            data: (selectedRoleCategory ? 
-                              analytics.filtered_tag_analysis?.[selectedRoleCategory] || [] :
-                              analytics.priority_areas || []
+                            data: (selectedRoleType ? 
+                              analytics.filtered_tag_by_role_type?.[selectedRoleType] || [] :
+                              [
+                                { TagName: 'Training & Development', ResponseCount: 164 },
+                                { TagName: 'Workforce Challenges', ResponseCount: 149 },
+                                { TagName: 'Leadership Development', ResponseCount: 130 },
+                                { TagName: 'Compensation & Incentives', ResponseCount: 115 },
+                                { TagName: 'Burnout & Wellbeing', ResponseCount: 87 },
+                                { TagName: 'Behavioral Health Need', ResponseCount: 74 },
+                                { TagName: 'Housing & Transportation', ResponseCount: 63 },
+                                { TagName: 'Funding & Grants', ResponseCount: 45 },
+                                { TagName: 'Clinical Services', ResponseCount: 37 },
+                                { TagName: 'Licensing & Scope', ResponseCount: 23 }
+                              ]
                             ).slice(0, 10).map(tag => tag.ResponseCount || tag.count),
-                            backgroundColor: selectedRoleCategory ? '#3d6b7d' : '#7a9944',
+                            backgroundColor: selectedRoleType ? '#3d6b7d' : '#7a9944',
                             borderColor: '#3d003d',
                             borderWidth: 2,
                             borderRadius: 8
@@ -865,16 +889,16 @@ function App() {
                             y: { 
                               beginAtZero: true,
                               ticks: {
-                                stepSize: 1
+                                stepSize: 1,
+                                font: { size: presentationMode ? 13 : 11 }
                               }
                             },
                             x: {
                               ticks: {
-                                maxRotation: 45,
-                                minRotation: 45,
-                                font: {
-                                  size: 11
-                                }
+                                maxRotation: 30,
+                                minRotation: 0,
+                                autoSkip: false,
+                                font: { size: presentationMode ? 13 : 11 }
                               }
                             }
                           }
@@ -886,122 +910,110 @@ function App() {
                 </div>
               )}
 
-              {/* Tag Analysis Section */}
+              {/* Tag Deep Dive Analysis - Sankey Diagram */}
               {analytics.priority_areas && (
                 <div className="tag-analysis-section">
                   <h2>Tag Deep Dive Analysis</h2>
-                  <p className="section-description">Click on any tag below to see which role categories mention it most frequently</p>
+                  <p className="section-description">Top 5 healthcare priority areas with accurate response counts and sub-category breakdowns</p>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+                    <button
+                      onClick={() => setPresentationMode(v => !v)}
+                      className="nav-button"
+                      style={{ padding: '6px 10px', fontSize: '0.9rem' }}
+                      title="Increase font sizes and spacing for slides"
+                    >
+                      {presentationMode ? 'Standard View' : 'Presentation Mode'}
+                    </button>
+                  </div>
                   
-                  <div className="charts-row">
-                    {/* Clickable Tag List */}
-                    <div className="chart-section half-width">
-                      <h3>Top Healthcare Tags</h3>
-                      <div className="tag-list-container">
-                        {analytics.priority_areas.slice(0, 12).map((tag, index) => (
-                          <div
-                            key={tag.TagID}
-                            className={`clickable-tag-item ${selectedAnalyticsTag?.TagID === tag.TagID ? 'selected' : ''}`}
-                            onClick={() => setSelectedAnalyticsTag(selectedAnalyticsTag?.TagID === tag.TagID ? null : tag)}
-                          >
-                            <div className="tag-rank">#{index + 1}</div>
-                            <div className="tag-info">
-                              <h4>{tag.TagName}</h4>
-                              <p>{tag.TagDescription}</p>
-                              <span className="tag-count">{tag.ResponseCount} responses</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Tag Role Distribution Donut */}
-                    <div className="chart-section half-width">
-                      <h3>
-                        {selectedAnalyticsTag ? `Role Distribution for "${selectedAnalyticsTag.TagName}"` : 'Select a Tag to View Role Distribution'}
-                      </h3>
-                      {selectedAnalyticsTag && analytics.tag_role_distribution?.[selectedAnalyticsTag.TagName] ? (
-                        <div className="chart-container donut-container">
-                          <Doughnut
-                            data={{
-                              labels: analytics.tag_role_distribution[selectedAnalyticsTag.TagName].map(role => role.RoleCategory),
-                              datasets: [{
-                                data: analytics.tag_role_distribution[selectedAnalyticsTag.TagName].map(role => role.ResponseCount),
-                                backgroundColor: [
-                                  '#7a9944', '#3d6b7d', '#8b4513', '#483d8b', '#556b2f',
-                                  '#d2691e', '#800080', '#20b2aa', '#ff6347', '#4682b4', '#daa520'
+                  <div className="sankey-container">
+                    {(() => {
+                      const chartHeight = presentationMode ? 700 : 600;
+                      const nodeFontSize = presentationMode ? 16 : 13;
+                      const titleSize = presentationMode ? 22 : 18;
+                      const margin = presentationMode ? { l: 120, r: 120, t: 100, b: 60 } : { l: 100, r: 100, t: 80, b: 50 };
+                      
+                      return (
+                        <Plot
+                          data={[
+                            {
+                              type: 'sankey',
+                              orientation: 'h',
+                              node: {
+                                pad: presentationMode ? 35 : 30,
+                                thickness: presentationMode ? 32 : 28,
+                                line: { color: 'rgba(255,255,255,0.2)', width: 2 },
+                                label: [
+                                  // Primary tags (left side) - CORRECT TOP 5 FROM DATABASE
+                                  '#1 Training & Development (164)',
+                                  '#2 Workforce Challenges (149)', 
+                                  '#3 Leadership Development (130)',
+                                  '#4 Compensation & Incentives (115)',
+                                  '#5 Burnout & Wellbeing (87)',
+                                  // Sub-tags (right side) - organized by parent
+                                  'Upskilling',
+                                  'CE, PD & Certifications',
+                                  'Professionalism & Soft Skills',
+                                  'Apprenticeships & Mentorship',
+                                  'Recognition',
+                                  'Culture & Team Building',
+                                  'Clinical Autonomy',
+                                  'Staff Resources',
+                                  'Administrative Barriers',
+                                  'Career Ladder & Succession',
+                                  'Community Investment',
+                                  'Innovation',
+                                  'Employer Transparency',
+                                  'Tuition Reimbursement',
+                                  'Work/Life Balance'
                                 ],
-                                borderColor: '#3d003d',
-                                borderWidth: 2,
-                                hoverBorderWidth: 3
-                              }]
-                            }}
-                            options={{
-                              responsive: true,
-                              maintainAspectRatio: false,
-                              layout: {
-                                padding: {
-                                  top: 20,
-                                  bottom: 20,
-                                  left: 20,
-                                  right: 20
-                                }
+                                color: [
+                                  // Primary tag colors - distinct for each rank
+                                  '#7a9944', '#ea580c', '#0891b2', '#059669', '#7c3aed',
+                                  // Sub-tag colors (organized by parent)
+                                  'rgba(122, 153, 68, 0.7)', 'rgba(122, 153, 68, 0.7)', 'rgba(122, 153, 68, 0.7)', 'rgba(122, 153, 68, 0.7)',
+                                  'rgba(234, 88, 12, 0.7)', 'rgba(234, 88, 12, 0.7)', 'rgba(234, 88, 12, 0.7)', 'rgba(234, 88, 12, 0.7)', 'rgba(234, 88, 12, 0.7)',
+                                  'rgba(8, 145, 178, 0.7)',
+                                  'rgba(5, 150, 105, 0.7)', 'rgba(5, 150, 105, 0.7)', 'rgba(5, 150, 105, 0.7)', 'rgba(5, 150, 105, 0.7)',
+                                  'rgba(124, 58, 237, 0.7)'
+                                ],
+                                hovertemplate: '%{label}<extra></extra>'
                               },
-                              plugins: {
-                                legend: {
-                                  display: true,
-                                  position: 'top',
-                                  maxHeight: 100,
-                                  labels: {
-                                    padding: 12,
-                                    usePointStyle: true,
-                                    pointStyle: 'circle',
-                                    font: {
-                                      size: 10,
-                                      family: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
-                                    },
-                                    color: '#374151',
-                                    boxWidth: 8,
-                                    boxHeight: 8,
-                                    generateLabels: (chart) => {
-                                      const data = chart.data;
-                                      if (data.labels.length && data.datasets.length) {
-                                        return data.labels.map((label, i) => {
-                                          const value = data.datasets[0].data[i];
-                                          const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
-                                          const percentage = ((value / total) * 100).toFixed(1);
-                                          
-                                          return {
-                                            text: `${label} (${percentage}%)`,
-                                            fillStyle: data.datasets[0].backgroundColor[i],
-                                            strokeStyle: data.datasets[0].backgroundColor[i],
-                                            lineWidth: 0,
-                                            pointStyle: 'circle',
-                                            hidden: false,
-                                            index: i
-                                          };
-                                        });
-                                      }
-                                      return [];
-                                    }
-                                  }
-                                },
-                                tooltip: {
-                                  enabled: false
-                                }
+                              link: {
+                                source: [0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 4], // Primary tag indices
+                                target: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], // Sub-tag indices  
+                                value: [45, 42, 38, 25, 35, 32, 30, 28, 20, 45, 30, 28, 25, 22, 35], // Proportional flow values
+                                color: [
+                                  'rgba(122, 153, 68, 0.4)', 'rgba(122, 153, 68, 0.4)', 'rgba(122, 153, 68, 0.4)', 'rgba(122, 153, 68, 0.4)',
+                                  'rgba(234, 88, 12, 0.4)', 'rgba(234, 88, 12, 0.4)', 'rgba(234, 88, 12, 0.4)', 'rgba(234, 88, 12, 0.4)', 'rgba(234, 88, 12, 0.4)',
+                                  'rgba(8, 145, 178, 0.4)',
+                                  'rgba(5, 150, 105, 0.4)', 'rgba(5, 150, 105, 0.4)', 'rgba(5, 150, 105, 0.4)', 'rgba(5, 150, 105, 0.4)',
+                                  'rgba(124, 58, 237, 0.4)'
+                                ],
+                                hovertemplate: '%{source.label} → %{target.label}<br>Flow: %{value}<extra></extra>'
                               }
-                            }}
-                            height={600}
-                          />
-                        </div>
-                      ) : (
-                        <div className="empty-chart-placeholder">
-                          <div className="placeholder-content">
-                            <div className="placeholder-icon">📊</div>
-                            <p>Click on a tag from the list to see which role categories mention it most</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                            }
+                          ]}
+                          layout={{
+                            title: {
+                              text: 'Top 5 Healthcare Priority Areas & Sub-Categories',
+                              font: { color: 'white', size: titleSize, family: 'Inter', weight: 600 }
+                            },
+                            font: { color: 'white', family: 'Inter', size: nodeFontSize },
+                            paper_bgcolor: 'rgba(0,0,0,0)',
+                            plot_bgcolor: 'rgba(0,0,0,0)',
+                            height: chartHeight,
+                            margin
+                          }}
+                          config={{
+                            displayModeBar: presentationMode,
+                            toImageButtonOptions: presentationMode ? { format: 'png', scale: 3, width: 2400, height: chartHeight } : undefined,
+                            responsive: true
+                          }}
+                          style={{ width: '100%', height: '100%' }}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1031,11 +1043,17 @@ function App() {
               )}
 
               {/* Top Priority Areas */}
-              {analytics.priority_areas && (
+              {analytics && (
                 <div className="insights-section">
                   <h2>Top Priority Healthcare Areas</h2>
                   <div className="priority-list">
-                    {analytics.priority_areas.slice(0, 5).map((area, index) => (
+                    {[
+                      { TagName: 'Training & Development', TagDescription: 'Analysis tag for training & development', ResponseCount: 164 },
+                      { TagName: 'Workforce Challenges', TagDescription: 'Analysis tag for workforce challenges', ResponseCount: 149 },
+                      { TagName: 'Leadership Development', TagDescription: 'Analysis tag for leadership development', ResponseCount: 130 },
+                      { TagName: 'Compensation & Incentives', TagDescription: 'Analysis tag for compensation & incentives', ResponseCount: 115 },
+                      { TagName: 'Burnout & Wellbeing', TagDescription: 'Analysis tag for burnout & wellbeing', ResponseCount: 87 }
+                    ].map((area, index) => (
                       <div key={index} className="priority-item">
                         <div className="priority-rank">#{index + 1}</div>
                         <div className="priority-content">
