@@ -41,30 +41,31 @@ function App() {
   const [effectiveTags, setEffectiveTags] = useState([]);
   const [overrideStats, setOverrideStats] = useState(null);
   const [previousView, setPreviousView] = useState('tags');
+  const [showingSubTagsFor, setShowingSubTagsFor] = useState(null);
 
   useEffect(() => {
     if (currentView === 'tags') {
-      fetch('http://10.71.0.5:5000/api/tags')
+      fetch('http://localhost:5000/api/tags')
         .then(response => response.json())
         .then(data => setTags(data))
         .catch(error => console.error('Error fetching tags:', error));
     } else if (currentView === 'responses') {
       setLoading(true);
-      fetch('http://10.71.0.5:5000/api/responses')
+      fetch('http://localhost:5000/api/responses')
         .then(response => response.json())
         .then(data => setQuestionsWithResponses(data))
         .catch(error => console.error('Error fetching responses:', error))
         .finally(() => setLoading(false));
     } else if (currentView === 'analytics') {
       setLoading(true);
-      fetch('http://10.71.0.5:5000/api/analytics')
+      fetch('http://localhost:5000/api/analytics')
         .then(response => response.json())
         .then(data => setAnalytics(data))
         .catch(error => console.error('Error fetching analytics:', error))
         .finally(() => setLoading(false));
     } else if (currentView === 'tag-editor') {
       // Fetch override stats for tag editor
-      fetch('http://10.71.0.5:5000/api/overrides/stats')
+      fetch('http://localhost:5000/api/overrides/stats')
         .then(response => response.json())
         .then(data => setOverrideStats(data))
         .catch(error => console.error('Error fetching override stats:', error));
@@ -76,7 +77,7 @@ function App() {
     setCurrentView('tag-detail');
     setLoading(true);
     try {
-      const response = await fetch(`http://10.71.0.5:5000/api/tags/${tag.TagID}/responses`);
+      const response = await fetch(`http://localhost:5000/api/tags/${tag.TagID}/responses`);
       const data = await response.json();
       setResponses(data);
     } catch (error) {
@@ -121,8 +122,8 @@ function App() {
     try {
       // Fetch available tags and current effective tags
       const [availableResponse, effectiveResponse] = await Promise.all([
-        fetch('http://10.71.0.5:5000/api/tags/available'),
-        fetch(`http://10.71.0.5:5000/api/responses/${response.ResponseID}/effective-tags`)
+        fetch('http://localhost:5000/api/tags/available'),
+        fetch(`http://localhost:5000/api/responses/${response.ResponseID}/effective-tags`)
       ]);
       
       const availableData = await availableResponse.json();
@@ -139,7 +140,7 @@ function App() {
 
   const handleAddTag = async (tagId) => {
     try {
-      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+      const response = await fetch(`http://localhost:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -154,7 +155,7 @@ function App() {
       
       if (response.ok) {
         // Refresh effective tags
-        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`);
+        const effectiveResponse = await fetch(`http://localhost:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
         const effectiveData = await effectiveResponse.json();
         setEffectiveTags(effectiveData);
       }
@@ -165,7 +166,7 @@ function App() {
 
   const handleRemoveTag = async (tagId) => {
     try {
-      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+      const response = await fetch(`http://localhost:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,7 +181,7 @@ function App() {
       
       if (response.ok) {
         // Refresh effective tags
-        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`);
+        const effectiveResponse = await fetch(`http://localhost:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
         const effectiveData = await effectiveResponse.json();
         setEffectiveTags(effectiveData);
       }
@@ -189,9 +190,47 @@ function App() {
     }
   };
 
+  const toggleSubTagPicker = (primaryTagId) => {
+    setShowingSubTagsFor(showingSubTagsFor === primaryTagId ? null : primaryTagId);
+  };
+
+  const handleQuickRemoveTag = async (responseId, tagId, tagName) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/response/${responseId}/tags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tag_id: tagId,
+          action: 'REMOVE',
+          applied_by: 'Policy Team Member',
+          notes: `Quick removal of "${tagName}" tag from main view`
+        })
+      });
+      
+      if (response.ok) {
+        // Refresh the responses to show updated tags
+        if (currentView === 'responses') {
+          // Refresh responses view
+          const responsesResponse = await fetch('http://localhost:5000/api/responses');
+          const data = await responsesResponse.json();
+          setQuestionsWithResponses(data);
+        } else if (currentView === 'tag-detail' && selectedTag) {
+          // Refresh tag detail view
+          const tagResponse = await fetch(`http://localhost:5000/api/tags/${selectedTag.TagID}/responses`);
+          const data = await tagResponse.json();
+          setResponses(data);
+        }
+      }
+    } catch (error) {
+      console.error('Error removing tag:', error);
+    }
+  };
+
   const fetchTagDistribution = async (questionId) => {
     try {
-      const response = await fetch(`http://10.71.0.5:5000/api/questions/${questionId}/tag-distribution`);
+      const response = await fetch(`http://localhost:5000/api/questions/${questionId}/tag-distribution`);
       const data = await response.json();
       setTagDistributions(prev => ({
         ...prev,
@@ -229,7 +268,7 @@ function App() {
     useEffect(() => {
       if (responseId && text) {
         setLoading(true);
-        fetch(`http://10.71.0.5:5000/api/response/${responseId}/highlight`)
+        fetch(`http://localhost:5000/api/response/${responseId}/highlight`)
           .then(response => response.json())
           .then(data => {
             if (data.highlights) {
@@ -477,32 +516,132 @@ function App() {
               <h4>🏷️ Current Tags ({effectiveTags.length})</h4>
               <div className="section-subtitle">Click × to remove a tag</div>
             </div>
-            <div className="current-tags-grid">
+            <div className="current-tags-grid hierarchical">
               {effectiveTags.length === 0 ? (
                 <div className="no-tags-message">
                   <span className="no-tags-icon">📝</span>
                   <p>No tags assigned yet. Add some tags below!</p>
                 </div>
-              ) : (
-                effectiveTags.map((tag) => (
-                  <div key={tag.TagID} className={`current-tag-pill ${manuallyAddedTagIds.has(tag.TagID) ? 'manually-added' : 'original'}`}>
-                    <div className="tag-content">
-                      <span className="tag-name">{tag.TagName}</span>
-                      <span className="tag-category">{tag.TagCategory}</span>
-                      {manuallyAddedTagIds.has(tag.TagID) && (
-                        <span className="manual-indicator">✨ Manual</span>
-                      )}
-                    </div>
-                    <button 
-                      className="remove-tag-button"
-                      onClick={() => handleRemoveTag(tag.TagID)}
-                      title={`Remove "${tag.TagName}" tag`}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))
-              )}
+              ) : (() => {
+                // Group tags by primary/sub for hierarchical display
+                const primaryTags = effectiveTags.filter(tag => tag.TagLevel === 1);
+                const subTags = effectiveTags.filter(tag => tag.TagLevel === 2);
+                
+                return (
+                  <>
+                    {/* Primary Tags with their Sub-tags */}
+                    {primaryTags.map((tag) => {
+                      const currentSubTags = subTags.filter(subTag => subTag.ParentTagID === tag.TagID);
+                      const availableSubTags = availableTags
+                        .filter(availableTag => 
+                          availableTag.ParentTagID === tag.TagID && 
+                          availableTag.TagLevel === 2 &&
+                          !effectiveTagIds.has(availableTag.TagID)
+                        );
+                      
+                      return (
+                        <div key={`primary-${tag.TagID}`} className="tag-group-editor">
+                          {/* Primary Tag with Add Sub-tags Button */}
+                          <div className="primary-tag-container">
+                            <div className={`current-tag-pill primary ${manuallyAddedTagIds.has(tag.TagID) ? 'manually-added' : 'original'}`}>
+                              <div className="tag-content">
+                                <span className="tag-name">🏷️ {tag.TagName}</span>
+                                <span className="tag-category">{tag.TagCategory}</span>
+                                {manuallyAddedTagIds.has(tag.TagID) && (
+                                  <span className="manual-indicator">✨ Manual</span>
+                                )}
+                              </div>
+                              <div className="tag-actions">
+                                {availableSubTags.length > 0 && (
+                                  <button 
+                                    className="add-subtags-button"
+                                    onClick={() => toggleSubTagPicker(tag.TagID)}
+                                    title={`Add sub-tags to "${tag.TagName}"`}
+                                  >
+                                    {showingSubTagsFor === tag.TagID ? '−' : '+'} Sub-tags
+                                  </button>
+                                )}
+                                <button 
+                                  className="remove-tag-button"
+                                  onClick={() => handleRemoveTag(tag.TagID)}
+                                  title={`Remove "${tag.TagName}" tag`}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Sub-tag Picker (when expanded) */}
+                          {showingSubTagsFor === tag.TagID && availableSubTags.length > 0 && (
+                            <div className="subtag-picker">
+                              <div className="subtag-picker-header">
+                                <h6>Available sub-tags for "{tag.TagName}":</h6>
+                              </div>
+                              <div className="subtag-options">
+                                {availableSubTags.map((subTag) => (
+                                  <button
+                                    key={`available-sub-${subTag.TagID}`}
+                                    className="subtag-option-button"
+                                    onClick={() => handleAddTag(subTag.TagID)}
+                                    title={subTag.TagDescription || `Add "${subTag.TagName}" sub-tag`}
+                                  >
+                                    <span className="subtag-name">↳ {subTag.TagName}</span>
+                                    <span className="add-icon">+</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Current Sub-tags for this primary tag */}
+                          {currentSubTags.map((subTag) => (
+                            <div key={`sub-${subTag.TagID}`} className={`current-tag-pill sub ${manuallyAddedTagIds.has(subTag.TagID) ? 'manually-added' : 'original'}`}>
+                              <div className="tag-content">
+                                <span className="tag-name">↳ {subTag.TagName}</span>
+                                <span className="tag-category">{subTag.TagCategory}</span>
+                                {manuallyAddedTagIds.has(subTag.TagID) && (
+                                  <span className="manual-indicator">✨ Manual</span>
+                                )}
+                              </div>
+                              <button 
+                                className="remove-tag-button"
+                                onClick={() => handleRemoveTag(subTag.TagID)}
+                                title={`Remove "${subTag.TagName}" tag`}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    
+                    {/* Orphaned sub-tags (if any) */}
+                    {subTags
+                      .filter(subTag => !primaryTags.some(primary => primary.TagID === subTag.ParentTagID))
+                      .map((tag) => (
+                        <div key={`orphan-${tag.TagID}`} className={`current-tag-pill sub orphan ${manuallyAddedTagIds.has(tag.TagID) ? 'manually-added' : 'original'}`}>
+                          <div className="tag-content">
+                            <span className="tag-name">↳ {tag.TagName} <small>(orphaned)</small></span>
+                            <span className="tag-category">{tag.TagCategory}</span>
+                            {manuallyAddedTagIds.has(tag.TagID) && (
+                              <span className="manual-indicator">✨ Manual</span>
+                            )}
+                          </div>
+                          <button 
+                            className="remove-tag-button"
+                            onClick={() => handleRemoveTag(tag.TagID)}
+                            title={`Remove "${tag.TagName}" tag`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    }
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -524,16 +663,18 @@ function App() {
                       <h5 className="category-name">{category}</h5>
                       <span className="category-count">({availableTagsInCategory.length} available)</span>
                     </div>
-                    <div className="available-tags-grid">
+                    <div className="available-tags-grid hierarchical">
                       {availableTagsInCategory.map((tag) => (
                         <button 
                           key={tag.TagID} 
-                          className="available-tag-button"
+                          className={`available-tag-button ${tag.TagLevel === 1 ? 'primary-tag' : 'sub-tag'}`}
                           onClick={() => handleAddTag(tag.TagID)}
                           title={tag.TagDescription || `Add "${tag.TagName}" tag`}
                         >
                           <div className="tag-button-content">
-                            <span className="tag-name">{tag.TagName}</span>
+                            <span className="tag-name">
+                              {tag.TagLevel === 1 ? '🏷️ ' : '↳ '}{tag.TagName}
+                            </span>
                             <span className="add-icon">+</span>
                           </div>
                           {tag.TagDescription && (
@@ -981,9 +1122,19 @@ function App() {
                                 {primaryTags.map((tag, tagIndex) => (
                                   <div key={`primary-${tagIndex}`} className="tag-group">
                                     <span 
-                                      className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                      className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''} with-remove`}
                                     >
                                       🏷️ {tag.TagName}
+                                      <button 
+                                        className="quick-remove-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleQuickRemoveTag(response.ResponseID, tag.TagID, tag.TagName);
+                                        }}
+                                        title={`Remove "${tag.TagName}" tag`}
+                                      >
+                                        ×
+                                      </button>
                                     </span>
                                     
                                     {/* Sub-tags for this primary tag */}
@@ -992,9 +1143,19 @@ function App() {
                                       .map((subTag, subIndex) => (
                                         <span 
                                           key={`sub-${subIndex}`}
-                                          className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''}`}
+                                          className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''} with-remove`}
                                         >
                                           ↳ {subTag.TagName}
+                                          <button 
+                                            className="quick-remove-btn"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleQuickRemoveTag(response.ResponseID, subTag.TagID, subTag.TagName);
+                                            }}
+                                            title={`Remove "${subTag.TagName}" tag`}
+                                          >
+                                            ×
+                                          </button>
                                         </span>
                                       ))
                                     }
@@ -1007,9 +1168,19 @@ function App() {
                                   .map((tag, tagIndex) => (
                                     <span 
                                       key={`orphan-${tagIndex}`}
-                                      className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                      className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''} with-remove`}
                                     >
                                       ↳ {tag.TagName} <small>(orphaned)</small>
+                                      <button 
+                                        className="quick-remove-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleQuickRemoveTag(response.ResponseID, tag.TagID, tag.TagName);
+                                        }}
+                                        title={`Remove "${tag.TagName}" tag`}
+                                      >
+                                        ×
+                                      </button>
                                     </span>
                                   ))
                                 }
@@ -1208,9 +1379,19 @@ function App() {
                                       {primaryTags.map((tag, tagIndex) => (
                                         <div key={`primary-${tagIndex}`} className="tag-group">
                                           <span 
-                                            className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                            className={`tag-badge primary ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''} with-remove`}
                                           >
                                             🏷️ {tag.TagName}
+                                            <button 
+                                              className="quick-remove-btn"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleQuickRemoveTag(response.ResponseID, tag.TagID, tag.TagName);
+                                              }}
+                                              title={`Remove "${tag.TagName}" tag`}
+                                            >
+                                              ×
+                                            </button>
                                           </span>
                                           
                                           {/* Sub-tags for this primary tag */}
@@ -1219,9 +1400,19 @@ function App() {
                                             .map((subTag, subIndex) => (
                                               <span 
                                                 key={`sub-${subIndex}`}
-                                                className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''}`}
+                                                className={`tag-badge sub ${subTag.TagCategory ? subTag.TagCategory.toLowerCase() : ''} with-remove`}
                                               >
                                                 ↳ {subTag.TagName}
+                                                <button 
+                                                  className="quick-remove-btn"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleQuickRemoveTag(response.ResponseID, subTag.TagID, subTag.TagName);
+                                                  }}
+                                                  title={`Remove "${subTag.TagName}" tag`}
+                                                >
+                                                  ×
+                                                </button>
                                               </span>
                                             ))
                                           }
@@ -1234,9 +1425,19 @@ function App() {
                                         .map((tag, tagIndex) => (
                                           <span 
                                             key={`orphan-${tagIndex}`}
-                                            className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''}`}
+                                            className={`tag-badge sub orphan ${tag.TagCategory ? tag.TagCategory.toLowerCase() : ''} with-remove`}
                                           >
                                             ↳ {tag.TagName} <small>(orphaned)</small>
+                                            <button 
+                                              className="quick-remove-btn"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleQuickRemoveTag(response.ResponseID, tag.TagID, tag.TagName);
+                                              }}
+                                              title={`Remove "${tag.TagName}" tag`}
+                                            >
+                                              ×
+                                            </button>
                                           </span>
                                         ))
                                       }

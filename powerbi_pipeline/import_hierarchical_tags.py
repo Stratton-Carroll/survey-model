@@ -103,8 +103,8 @@ def import_question_tag_mappings():
         tag_name = row['TagName']
         tag_type = row['TagType']
         
-        # Find TagID for this tag name
-        tag_query = "SELECT TagID FROM DimTags WHERE TagName = ? AND IsActive = 1"
+        # Find TagID for this tag name (case-insensitive)
+        tag_query = "SELECT TagID FROM DimTags WHERE LOWER(TagName) = LOWER(?) AND IsActive = 1"
         tag_result = conn.execute(tag_query, (tag_name,)).fetchone()
         
         if not tag_result:

@@ -2069,3 +2069,192 @@ body {
   color: #9a3412;
   border-color: rgba(234, 88, 12, 0.3);
 }
+
+/* Sub-tag Picker Styles */
+.primary-tag-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.current-tag-pill.primary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+}
+
+.tag-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.add-subtags-button {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.add-subtags-button:hover {
+  background: linear-gradient(135deg, #047857, #059669);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+.subtag-picker {
+  background: rgba(5, 150, 105, 0.05);
+  border: 1px solid rgba(5, 150, 105, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.subtag-picker-header h6 {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  color: #047857;
+  font-weight: 600;
+}
+
+.subtag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subtag-option-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: white;
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.subtag-option-button:hover {
+  background: rgba(5, 150, 105, 0.1);
+  border-color: rgba(5, 150, 105, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
+}
+
+.subtag-option-button .subtag-name {
+  color: #047857;
+  font-weight: 500;
+  flex-grow: 1;
+  text-align: left;
+}
+
+.subtag-option-button .add-icon {
+  color: #059669;
+  font-weight: bold;
+  margin-left: 8px;
+  font-size: 1rem;
+}
+
+.tag-group-editor {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.current-tag-pill.sub {
+  margin-left: 20px;
+  margin-top: 4px;
+}
+
+/* Quick Remove Button Styles */
+.tag-badge.with-remove {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 28px;
+}
+
+.quick-remove-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(220, 38, 127, 0.3);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #dc2680;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.8;
+}
+
+.quick-remove-btn:hover {
+  background: #dc2680;
+  color: white;
+  border-color: #dc2680;
+  opacity: 1;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 2px 4px rgba(220, 38, 127, 0.3);
+}
+
+.tag-badge.primary .quick-remove-btn {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #dc2680;
+}
+
+.tag-badge.primary .quick-remove-btn:hover {
+  background: rgba(220, 38, 127, 0.9);
+  color: white;
+  border-color: rgba(220, 38, 127, 0.9);
+}
+
+.tag-badge.sub .quick-remove-btn {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #666;
+  font-size: 10px;
+  width: 16px;
+  height: 16px;
+}
+
+.tag-badge.sub .quick-remove-btn:hover {
+  background: #dc2680;
+  color: white;
+  border-color: #dc2680;
+}
