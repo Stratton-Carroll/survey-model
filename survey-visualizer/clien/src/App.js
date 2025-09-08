@@ -928,10 +928,10 @@ function App() {
                   
                   <div className="sankey-container">
                     {(() => {
-                      const chartHeight = presentationMode ? 700 : 600;
-                      const nodeFontSize = presentationMode ? 16 : 13;
+                      const chartHeight = presentationMode ? 800 : 700;
+                      const nodeFontSize = presentationMode ? 16 : 14;
                       const titleSize = presentationMode ? 22 : 18;
-                      const margin = presentationMode ? { l: 120, r: 120, t: 100, b: 60 } : { l: 100, r: 100, t: 80, b: 50 };
+                      const margin = presentationMode ? { l: 80, r: 80, t: 90, b: 40 } : { l: 60, r: 60, t: 70, b: 30 };
                       
                       return (
                         <Plot
@@ -940,8 +940,8 @@ function App() {
                               type: 'sankey',
                               orientation: 'h',
                               node: {
-                                pad: presentationMode ? 35 : 30,
-                                thickness: presentationMode ? 32 : 28,
+                                pad: presentationMode ? 25 : 20,
+                                thickness: presentationMode ? 40 : 35,
                                 line: { color: 'rgba(255,255,255,0.2)', width: 2 },
                                 label: [
                                   // Primary tags (left side) - CORRECT TOP 5 FROM DATABASE
@@ -1018,29 +1018,6 @@ function App() {
                 </div>
               )}
 
-              {/* Response Quality Insights */}
-              {analytics.response_quality && (
-                <div className="insights-section">
-                  <h2>Response Quality Insights</h2>
-                  <div className="insights-grid">
-                    <div className="insight-card">
-                      <h4>High Engagement Questions</h4>
-                      <p>Questions with response rates above 80%</p>
-                      <div className="insight-value">{analytics.response_quality.high_engagement_count || 0} questions</div>
-                    </div>
-                    <div className="insight-card">
-                      <h4>Detailed Responses</h4>
-                      <p>Responses with 50+ words</p>
-                      <div className="insight-value">{analytics.response_quality.detailed_responses_count || 0} responses</div>
-                    </div>
-                    <div className="insight-card">
-                      <h4>Text vs Scale Questions</h4>
-                      <p>Open-ended vs structured questions</p>
-                      <div className="insight-value">{analytics.response_quality.text_question_ratio || 'N/A'}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Top Priority Areas */}
               {analytics && (
@@ -1060,6 +1037,125 @@ function App() {
                           <h4>{area.TagName}</h4>
                           <p>{area.TagDescription}</p>
                           <span className="priority-count">{area.ResponseCount} mentions</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Question-Level Insights */}
+              {analytics && (
+                <div className="insights-section">
+                  <h2>Question-Level Insights</h2>
+                  <p className="section-description">Top themes and categories emerging from each survey question</p>
+                  <div className="question-insights-grid">
+                    {[
+                      {
+                        questionNum: 1,
+                        questionText: "What skills, resources, or knowledge are a priority as you think about further developing your health care workforce?",
+                        topTags: [
+                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Recognition'] },
+                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] }
+                        ]
+                      },
+                      {
+                        questionNum: 2,
+                        questionText: "When considering your response to the previous question, what has been the most significant challenge preventing you from taking action?",
+                        topTags: [
+                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Upskilling'] },
+                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Administrative Barriers'] },
+                          { name: 'Compensation & Incentives', subTags: ['Innovation', 'Community Investment'] }
+                        ]
+                      },
+                      {
+                        questionNum: 3,
+                        questionText: "How do you currently meet the training needs of individuals and teams?",
+                        topTags: [
+                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Professionalism & Soft Skills'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] },
+                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Culture & Team Building'] }
+                        ]
+                      },
+                      {
+                        questionNum: 4,
+                        questionText: "What are some specific actions that we (the community) could take to help RETAIN health care professionals in NWA?",
+                        topTags: [
+                          { name: 'Compensation & Incentives', subTags: ['Community Investment', 'Innovation'] },
+                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Culture & Team Building'] },
+                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] }
+                        ]
+                      },
+                      {
+                        questionNum: 5,
+                        questionText: "What are some specific actions that we (the community) could take to help RECRUIT health care professionals in NWA?",
+                        topTags: [
+                          { name: 'Compensation & Incentives', subTags: ['Community Investment', 'Employer Transparency'] },
+                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Staff Resources'] },
+                          { name: 'Training & Development', subTags: ['Upskilling', 'Apprenticeships & Mentorship'] }
+                        ]
+                      },
+                      {
+                        questionNum: 6,
+                        questionText: "What are the current training and development needs in your organization at different leadership levels?",
+                        topTags: [
+                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] },
+                          { name: 'Workforce Challenges', subTags: ['Culture & Team Building', 'Recognition'] },
+                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] }
+                        ]
+                      },
+                      {
+                        questionNum: 7,
+                        questionText: "What specific actions are needed to elevate and advance NWA's health care professionals?",
+                        topTags: [
+                          { name: 'Training & Development', subTags: ['Upskilling', 'Professionalism & Soft Skills'] },
+                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Staff Resources'] },
+                          { name: 'Compensation & Incentives', subTags: ['Innovation', 'Community Investment'] }
+                        ]
+                      },
+                      {
+                        questionNum: 8,
+                        questionText: "Which groups of health care professionals in your organization have the most significant training, development, or supportive needs?",
+                        topTags: [
+                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] },
+                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Upskilling'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] }
+                        ]
+                      },
+                      {
+                        questionNum: 9,
+                        questionText: "Do you have any final comments or suggestions regarding ways we can further advance and strengthen the NWA health care workforce?",
+                        topTags: [
+                          { name: 'Behavioral Health Need', subTags: ['Mental Health Services', 'Crisis Intervention'] },
+                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] },
+                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] }
+                        ]
+                      }
+                    ].map((question, index) => (
+                      <div key={index} className="question-insight-card">
+                        <div className="question-insight-header">
+                          <div className="question-number">Q{question.questionNum}</div>
+                          <div className="question-content">
+                            <p className="question-text">{question.questionText}</p>
+                          </div>
+                        </div>
+                        <div className="question-tags-section">
+                          <h5>Top 3 Themes</h5>
+                          <div className="question-tags-list">
+                            {question.topTags.map((tag, tagIndex) => (
+                              <div key={tagIndex} className="question-tag-group">
+                                <div className="primary-tag">
+                                  <span className="tag-name">{tag.name}</span>
+                                </div>
+                                <div className="sub-tags">
+                                  {tag.subTags.map((subTag, subIndex) => (
+                                    <span key={subIndex} className="sub-tag">{subTag}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ))}
