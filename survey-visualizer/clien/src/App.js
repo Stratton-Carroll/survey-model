@@ -759,7 +759,7 @@ function App() {
                 <div className="metric-card">
                   <h3>Total Responses</h3>
                   <div className="metric-value">{analytics.overview?.unique_respondents ? analytics.overview.unique_respondents * 9 : 'N/A'}</div>
-                  <div className="metric-subtitle">Survey responses collected</div>
+                  <div className="metric-subtitle">Total questions answered</div>
                 </div>
                 <div className="metric-card">
                   <h3>Organizations</h3>
