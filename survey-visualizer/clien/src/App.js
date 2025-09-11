@@ -46,27 +46,27 @@ function App() {
 
   useEffect(() => {
     if (currentView === 'tags') {
-      fetch('http://localhost:5000/api/tags')
+      fetch('http://10.71.0.5:5000/api/tags')
         .then(response => response.json())
         .then(data => setTags(data))
         .catch(error => console.error('Error fetching tags:', error));
     } else if (currentView === 'responses') {
       setLoading(true);
-      fetch('http://localhost:5000/api/responses')
+      fetch('http://10.71.0.5:5000/api/responses')
         .then(response => response.json())
         .then(data => setQuestionsWithResponses(data))
         .catch(error => console.error('Error fetching responses:', error))
         .finally(() => setLoading(false));
     } else if (currentView === 'analytics') {
       setLoading(true);
-      fetch('http://localhost:5000/api/analytics')
+      fetch('http://10.71.0.5:5000/api/analytics')
         .then(response => response.json())
         .then(data => setAnalytics(data))
         .catch(error => console.error('Error fetching analytics:', error))
         .finally(() => setLoading(false));
     } else if (currentView === 'tag-editor') {
       // Fetch override stats for tag editor
-      fetch('http://localhost:5000/api/overrides/stats')
+      fetch('http://10.71.0.5:5000/api/overrides/stats')
         .then(response => response.json())
         .then(data => setOverrideStats(data))
         .catch(error => console.error('Error fetching override stats:', error));
@@ -78,7 +78,7 @@ function App() {
     setCurrentView('tag-detail');
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/tags/${tag.TagID}/responses`);
+      const response = await fetch(`http://10.71.0.5:5000/api/tags/${tag.TagID}/responses`);
       const data = await response.json();
       setResponses(data);
     } catch (error) {
@@ -123,8 +123,8 @@ function App() {
     try {
       // Fetch available tags and current effective tags
       const [availableResponse, effectiveResponse] = await Promise.all([
-        fetch('http://localhost:5000/api/tags/available'),
-        fetch(`http://localhost:5000/api/responses/${response.ResponseID}/effective-tags`)
+        fetch('http://10.71.0.5:5000/api/tags/available'),
+        fetch(`http://10.71.0.5:5000/api/responses/${response.ResponseID}/effective-tags`)
       ]);
       
       const availableData = await availableResponse.json();
@@ -141,7 +141,7 @@ function App() {
 
   const handleAddTag = async (tagId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ function App() {
       
       if (response.ok) {
         // Refresh effective tags
-        const effectiveResponse = await fetch(`http://localhost:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
+        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
         const effectiveData = await effectiveResponse.json();
         setEffectiveTags(effectiveData);
       }
@@ -167,7 +167,7 @@ function App() {
 
   const handleRemoveTag = async (tagId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
+      const response = await fetch(`http://10.71.0.5:5000/api/response/${selectedResponseForEditing.ResponseID}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,7 +182,7 @@ function App() {
       
       if (response.ok) {
         // Refresh effective tags
-        const effectiveResponse = await fetch(`http://localhost:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
+        const effectiveResponse = await fetch(`http://10.71.0.5:5000/api/responses/${selectedResponseForEditing.ResponseID}/effective-tags`);
         const effectiveData = await effectiveResponse.json();
         setEffectiveTags(effectiveData);
       }
@@ -197,7 +197,7 @@ function App() {
 
   const handleQuickRemoveTag = async (responseId, tagId, tagName) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/response/${responseId}/tags`, {
+      const response = await fetch(`http://10.71.0.5:5000/api/response/${responseId}/tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -214,12 +214,12 @@ function App() {
         // Refresh the responses to show updated tags
         if (currentView === 'responses') {
           // Refresh responses view
-          const responsesResponse = await fetch('http://localhost:5000/api/responses');
+          const responsesResponse = await fetch('http://10.71.0.5:5000/api/responses');
           const data = await responsesResponse.json();
           setQuestionsWithResponses(data);
         } else if (currentView === 'tag-detail' && selectedTag) {
           // Refresh tag detail view
-          const tagResponse = await fetch(`http://localhost:5000/api/tags/${selectedTag.TagID}/responses`);
+          const tagResponse = await fetch(`http://10.71.0.5:5000/api/tags/${selectedTag.TagID}/responses`);
           const data = await tagResponse.json();
           setResponses(data);
         }
@@ -231,7 +231,7 @@ function App() {
 
   const fetchTagDistribution = async (questionId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/questions/${questionId}/tag-distribution`);
+      const response = await fetch(`http://10.71.0.5:5000/api/questions/${questionId}/tag-distribution`);
       const data = await response.json();
       setTagDistributions(prev => ({
         ...prev,
@@ -269,7 +269,7 @@ function App() {
     useEffect(() => {
       if (responseId && text) {
         setLoading(true);
-        fetch(`http://localhost:5000/api/response/${responseId}/highlight`)
+        fetch(`http://10.71.0.5:5000/api/response/${responseId}/highlight`)
           .then(response => response.json())
           .then(data => {
             if (data.highlights) {
@@ -737,7 +737,7 @@ function App() {
           </div>
           <div className="page-title">
             <h1>Survey Analytics Dashboard</h1>
-            <p className="page-description">Comprehensive insights and metrics from the healthcare needs assessment survey</p>
+            <p className="page-description">Comprehensive insights and metrics from the health care needs assessment survey</p>
           </div>
           
           {loading ? (
@@ -764,7 +764,7 @@ function App() {
                 <div className="metric-card">
                   <h3>Organizations</h3>
                   <div className="metric-value">24</div>
-                  <div className="metric-subtitle">Healthcare organizations represented</div>
+                  <div className="metric-subtitle">Health care organizations represented</div>
                 </div>
               </div>
 
@@ -845,7 +845,7 @@ function App() {
                               { TagName: 'Workforce Challenges', ResponseCount: 149 },
                               { TagName: 'Leadership Development', ResponseCount: 130 },
                               { TagName: 'Compensation & Incentives', ResponseCount: 115 },
-                              { TagName: 'Burnout & Wellbeing', ResponseCount: 87 },
+                              { TagName: 'Burnout & Well-being', ResponseCount: 87 },
                               { TagName: 'Behavioral Health Need', ResponseCount: 74 },
                               { TagName: 'Housing & Transportation', ResponseCount: 63 },
                               { TagName: 'Funding & Grants', ResponseCount: 45 },
@@ -862,7 +862,7 @@ function App() {
                                 { TagName: 'Workforce Challenges', ResponseCount: 149 },
                                 { TagName: 'Leadership Development', ResponseCount: 130 },
                                 { TagName: 'Compensation & Incentives', ResponseCount: 115 },
-                                { TagName: 'Burnout & Wellbeing', ResponseCount: 87 },
+                                { TagName: 'Burnout & Well-being', ResponseCount: 87 },
                                 { TagName: 'Behavioral Health Need', ResponseCount: 74 },
                                 { TagName: 'Housing & Transportation', ResponseCount: 63 },
                                 { TagName: 'Funding & Grants', ResponseCount: 45 },
@@ -914,7 +914,7 @@ function App() {
               {analytics.priority_areas && (
                 <div className="tag-analysis-section">
                   <h2>Tag Deep Dive Analysis</h2>
-                  <p className="section-description">Top 5 healthcare priority areas with accurate response counts and sub-category breakdowns</p>
+                  <p className="section-description">Top 5 health care priority areas with accurate response counts and sub-category breakdowns</p>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
                     <button
                       onClick={() => setPresentationMode(v => !v)}
@@ -928,10 +928,10 @@ function App() {
                   
                   <div className="sankey-container">
                     {(() => {
-                      const chartHeight = presentationMode ? 800 : 700;
-                      const nodeFontSize = presentationMode ? 16 : 14;
+                      const chartHeight = presentationMode ? 900 : 850;
+                      const nodeFontSize = presentationMode ? 16 : 15;
                       const titleSize = presentationMode ? 22 : 18;
-                      const margin = presentationMode ? { l: 80, r: 80, t: 90, b: 40 } : { l: 60, r: 60, t: 70, b: 30 };
+                      const margin = presentationMode ? { l: 80, r: 120, t: 90, b: 40 } : { l: 60, r: 100, t: 70, b: 30 };
                       
                       return (
                         <Plot
@@ -940,16 +940,27 @@ function App() {
                               type: 'sankey',
                               orientation: 'h',
                               node: {
-                                pad: presentationMode ? 25 : 20,
+                                pad: presentationMode ? 40 : 35,
                                 thickness: presentationMode ? 40 : 35,
-                                line: { color: 'rgba(255,255,255,0.2)', width: 2 },
+                                line: { color: 'transparent', width: 0 },
+                                font: { 
+                                  color: 'black', 
+                                  family: 'Inter', 
+                                  size: nodeFontSize,
+                                  weight: 'bold',
+                                  outline: 'none',
+                                  stroke: 'none',
+                                  'stroke-width': 0,
+                                  'text-stroke': 'none',
+                                  '-webkit-text-stroke': 'none'
+                                },
                                 label: [
                                   // Primary tags (left side) - CORRECT TOP 5 FROM DATABASE
                                   '#1 Training & Development (164)',
                                   '#2 Workforce Challenges (149)', 
                                   '#3 Leadership Development (130)',
                                   '#4 Compensation & Incentives (115)',
-                                  '#5 Burnout & Wellbeing (87)',
+                                  '#5 Burnout & Well-being (87)',
                                   // Sub-tags (right side) - organized by parent
                                   'Upskilling',
                                   'CE, PD & Certifications',
@@ -960,7 +971,7 @@ function App() {
                                   'Clinical Autonomy',
                                   'Staff Resources',
                                   'Administrative Barriers',
-                                  'Career Ladder & Succession',
+                                  'Career Ladder & Succession Planning',
                                   'Community Investment',
                                   'Innovation',
                                   'Employer Transparency',
@@ -979,6 +990,7 @@ function App() {
                                 ],
                                 hovertemplate: '%{label}<extra></extra>'
                               },
+                              textfont: { color: 'black', family: 'Inter', size: nodeFontSize },
                               link: {
                                 source: [0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 4], // Primary tag indices
                                 target: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], // Sub-tag indices  
@@ -996,10 +1008,11 @@ function App() {
                           ]}
                           layout={{
                             title: {
-                              text: 'Top 5 Healthcare Priority Areas & Sub-Categories',
-                              font: { color: 'white', size: titleSize, family: 'Inter', weight: 600 }
+                              text: 'Top 5 Health Care Priority Areas & Sub-Categories',
+                              font: { color: 'black', size: titleSize, family: 'Inter', weight: 600 }
                             },
-                            font: { color: 'white', family: 'Inter', size: nodeFontSize },
+                            font: { color: 'black', family: 'Inter', size: nodeFontSize, outline: 'none', stroke: 'none' },
+                            textfont: { color: 'black', family: 'Inter', size: nodeFontSize },
                             paper_bgcolor: 'rgba(0,0,0,0)',
                             plot_bgcolor: 'rgba(0,0,0,0)',
                             height: chartHeight,
@@ -1007,8 +1020,22 @@ function App() {
                           }}
                           config={{
                             displayModeBar: presentationMode,
-                            toImageButtonOptions: presentationMode ? { format: 'png', scale: 3, width: 2400, height: chartHeight } : undefined,
-                            responsive: true
+                            toImageButtonOptions: presentationMode ? { 
+                              format: 'png', 
+                              scale: 3, 
+                              width: 2400, 
+                              height: chartHeight,
+                              filename: 'sankey_diagram'
+                            } : {
+                              format: 'png',
+                              scale: 2,
+                              filename: 'sankey_diagram'
+                            },
+                            responsive: true,
+                            plotlyServerURL: 'https://plot.ly',
+                            staticPlot: false,
+                            editable: false,
+                            scrollZoom: false
                           }}
                           style={{ width: '100%', height: '100%' }}
                         />
@@ -1022,14 +1049,14 @@ function App() {
               {/* Top Priority Areas */}
               {analytics && (
                 <div className="insights-section">
-                  <h2>Top Priority Healthcare Areas</h2>
+                  <h2>Top Priority Health Care Areas</h2>
                   <div className="priority-list">
                     {[
                       { TagName: 'Training & Development', TagDescription: 'Analysis tag for training & development', ResponseCount: 164 },
                       { TagName: 'Workforce Challenges', TagDescription: 'Analysis tag for workforce challenges', ResponseCount: 149 },
                       { TagName: 'Leadership Development', TagDescription: 'Analysis tag for leadership development', ResponseCount: 130 },
                       { TagName: 'Compensation & Incentives', TagDescription: 'Analysis tag for compensation & incentives', ResponseCount: 115 },
-                      { TagName: 'Burnout & Wellbeing', TagDescription: 'Analysis tag for burnout & wellbeing', ResponseCount: 87 }
+                      { TagName: 'Burnout & Well-being', TagDescription: 'Analysis tag for burnout & well-being', ResponseCount: 87 }
                     ].map((area, index) => (
                       <div key={index} className="priority-item">
                         <div className="priority-rank">#{index + 1}</div>
@@ -1055,81 +1082,81 @@ function App() {
                         questionNum: 1,
                         questionText: "What skills, resources, or knowledge are a priority as you think about further developing your health care workforce?",
                         topTags: [
-                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Recognition'] },
-                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] },
-                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] }
+                          { name: 'Training & Development', subTags: ['CE, PD and Certifications'] },
+                          { name: 'Workforce Challenges', subTags: ['Early K-12 Healthcare Integration'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder and Succession Planning'] }
                         ]
                       },
                       {
                         questionNum: 2,
                         questionText: "When considering your response to the previous question, what has been the most significant challenge preventing you from taking action?",
                         topTags: [
-                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Upskilling'] },
-                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Administrative Barriers'] },
-                          { name: 'Compensation & Incentives', subTags: ['Innovation', 'Community Investment'] }
+                          { name: 'Workforce Challenges', subTags: ['Time'] },
+                          { name: 'Compensation & Incentives', subTags: ['Tuition Reimbursement and Education Cost'] },
+                          { name: 'Training & Development', subTags: ['CE, PD and Certifications'] }
                         ]
                       },
                       {
                         questionNum: 3,
                         questionText: "How do you currently meet the training needs of individuals and teams?",
                         topTags: [
-                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Professionalism & Soft Skills'] },
-                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] },
-                          { name: 'Workforce Challenges', subTags: ['Staff Resources', 'Culture & Team Building'] }
+                          { name: 'Staffing and Training', subTags: ['Online Training'] },
+                          { name: 'Policy', subTags: ['Graduate Medical Education'] },
+                          { name: 'Compensation & Incentives', subTags: ['Tuition Reimbursement and Education Cost'] }
                         ]
                       },
                       {
                         questionNum: 4,
                         questionText: "What are some specific actions that we (the community) could take to help RETAIN health care professionals in NWA?",
                         topTags: [
-                          { name: 'Compensation & Incentives', subTags: ['Community Investment', 'Innovation'] },
-                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Culture & Team Building'] },
-                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] }
+                          { name: 'Staffing and Training', subTags: ['Inadequate Staffing and Workforce Shortage'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder and Succession Planning'] },
+                          { name: 'Service Line Expansion', subTags: ['Collaboration and Partnerships'] }
                         ]
                       },
                       {
                         questionNum: 5,
                         questionText: "What are some specific actions that we (the community) could take to help RECRUIT health care professionals in NWA?",
                         topTags: [
-                          { name: 'Compensation & Incentives', subTags: ['Community Investment', 'Employer Transparency'] },
-                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Staff Resources'] },
-                          { name: 'Training & Development', subTags: ['Upskilling', 'Apprenticeships & Mentorship'] }
+                          { name: 'Compensation & Incentives', subTags: ['Tuition Reimbursement and Education Cost'] },
+                          { name: 'Service Line Expansion', subTags: ['Collaboration and Partnerships'] },
+                          { name: 'Policy', subTags: ['Graduate Medical Education'] }
                         ]
                       },
                       {
                         questionNum: 6,
                         questionText: "What are the current training and development needs in your organization at different leadership levels?",
                         topTags: [
-                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] },
-                          { name: 'Workforce Challenges', subTags: ['Culture & Team Building', 'Recognition'] },
-                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] }
+                          { name: 'Leadership Development', subTags: ['Career Ladder and Succession Planning'] },
+                          { name: 'Staffing and Training', subTags: ['Inadequate Staffing and Workforce Shortage'] },
+                          { name: 'Education', subTags: ['Academic Programs and Research'] }
                         ]
                       },
                       {
                         questionNum: 7,
                         questionText: "What specific actions are needed to elevate and advance NWA's health care professionals?",
                         topTags: [
-                          { name: 'Training & Development', subTags: ['Upskilling', 'Professionalism & Soft Skills'] },
-                          { name: 'Workforce Challenges', subTags: ['Recognition', 'Staff Resources'] },
-                          { name: 'Compensation & Incentives', subTags: ['Innovation', 'Community Investment'] }
+                          { name: 'Training & Development', subTags: ['CE, PD and Certifications'] },
+                          { name: 'Service Line Expansion', subTags: ['Collaboration and Partnerships'] },
+                          { name: 'Leadership Development', subTags: ['Career Ladder and Succession Planning'] }
                         ]
                       },
                       {
                         questionNum: 8,
                         questionText: "Which groups of health care professionals in your organization have the most significant training, development, or supportive needs?",
                         topTags: [
-                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] },
-                          { name: 'Training & Development', subTags: ['CE, PD & Certifications', 'Upskilling'] },
-                          { name: 'Leadership Development', subTags: ['Career Ladder & Succession'] }
+                          { name: 'Staffing and Training', subTags: ['Team-Based and Multidisciplinary Care'] },
+                          { name: 'Policy', subTags: ['Graduate Medical Education'] },
+                          { name: 'Training & Development', subTags: ['Upskilling'] }
                         ]
                       },
                       {
                         questionNum: 9,
                         questionText: "Do you have any final comments or suggestions regarding ways we can further advance and strengthen the NWA health care workforce?",
                         topTags: [
-                          { name: 'Behavioral Health Need', subTags: ['Mental Health Services', 'Crisis Intervention'] },
-                          { name: 'Training & Development', subTags: ['Upskilling', 'CE, PD & Certifications'] },
-                          { name: 'Burnout & Wellbeing', subTags: ['Work/Life Balance'] }
+                          { name: 'Service Line Expansion', subTags: ['Collaboration and Partnerships'] },
+                          { name: 'Policy', subTags: ['Reimbursement Rates'] },
+                          { name: 'Education', subTags: ['Academic Programs and Research'] }
                         ]
                       }
                     ].map((question, index) => (
@@ -1585,8 +1612,8 @@ function App() {
           <button onClick={handleTagEditor} className="nav-button">Tag Editor</button>
         </div>
         <div className="page-title">
-          <h1>Healthcare Survey Analysis</h1>
-          <p className="page-description">Explore healthcare challenges and insights through our comprehensive survey analysis. Click on any category to dive deeper into specific responses.</p>
+          <h1>Health Care Survey Analysis</h1>
+          <p className="page-description">Explore health care challenges and insights through our comprehensive survey analysis. Click on any category to dive deeper into specific responses.</p>
         </div>
         <div className="tags-grid">
           {tags.map(tag => (

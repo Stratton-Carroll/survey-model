@@ -1954,6 +1954,27 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+/* Force remove white outline from Plotly Sankey text - COMPREHENSIVE APPROACH */
+.sankey-container text,
+.sankey-container .js-plotly-plot text,
+.sankey-container .js-plotly-plot .plotly text,
+.sankey-container .js-plotly-plot .plotly .sankey text,
+.sankey-container svg text,
+.sankey-container g text,
+.sankey-container .sankey-node text,
+.sankey-container .node text {
+  stroke: none !important;
+  stroke-width: 0 !important;
+  text-stroke: none !important;
+  -webkit-text-stroke: none !important;
+  -webkit-text-stroke-width: 0 !important;
+  -webkit-text-stroke-color: transparent !important;
+  outline: none !important;
+  text-shadow: none !important;
+  text-outline: none !important;
+  paint-order: fill !important;
+}
+
 .sankey-container:hover {
   background: rgba(255, 255, 255, 0.07);
   box-shadow: var(--shadow-lg);
